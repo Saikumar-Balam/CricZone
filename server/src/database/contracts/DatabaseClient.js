@@ -6,6 +6,12 @@ export default class DatabaseClient
     {
         throw new Error("connect() must be implemented")
     }
+
+    async getClient()
+    {
+        throw new Error("getClient() must be implemented")
+    }
+    
     async query(sql, params=[])
     {
         throw new Error("query() must be implemented")

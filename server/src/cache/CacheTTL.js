@@ -1,9 +1,13 @@
 export const CacheTTL = {
-    LIVE_MATCH: 5,
+    // Live match caches
+    LIVE_MATCH: 60,
+    MATCH_SUMMARY: 60,
+    SCORECARD:60,
+    COMMENTARY: 300,
+
+    // general entity cache
     MATCH: 60,
-
-    SCORCARD: 10,
-
+    
     PLAYER: 300,
     TEAM: 300,
     SERIES: 300,
@@ -13,5 +17,15 @@ export const CacheTTL = {
 
     NEWS: 60,
 
-    STATISTICS: 120
+    STATISTICS: 120,
+
+    // completed match cache
+    COMPLETED_MATCH: {
+        SUMMARY: 3600,
+        SCORECARD: 3600,
+        COMMENTARY: 3600
+    },
+
+    // not a TTL, but configuration for commentary cache
+    COMMENTARY_LIMIT: 100
 }

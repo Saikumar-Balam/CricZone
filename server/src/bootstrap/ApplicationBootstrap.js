@@ -3,6 +3,12 @@
 import { createWebSocketInfrastructure } from "../containers/websocket.container.js";
 import { KafkaTopics } from "../messaging/KafkaTopics.js";
 import http from "node:http";
+import PostgresScorecardRepository from "../repositories/postgres/postgresScorecardRepository.js";
+import RedisLiveCache from "../cache/redis/RedisLiveCache.js";
+import LiveUpdateService from "../services/LiveUpdateService.js";
+import { logger } from "../containers/logger.container.js";
+import LiveBallEventHandler from "../messaging/handlers/LiveBallEventHandler.js"
+
 
 export default class ApplicationBootstrap {
   constructor(
@@ -11,7 +17,6 @@ export default class ApplicationBootstrap {
     redisClient,
     kafkaProducer,
     eventConsumer,
-    liveBallEventHandler,
     port,
   ) {
     this.app = app;
@@ -19,7 +24,6 @@ export default class ApplicationBootstrap {
     this.redisClient = redisClient;
     this.kafkaProducer = kafkaProducer;
     this.eventConsumer = eventConsumer;
-    this.liveBallEventHandler = liveBallEventHandler;
     this.port = port;
     this.server = null;
   }
@@ -32,35 +36,33 @@ export default class ApplicationBootstrap {
     }
 
     await this.kafkaProducer.connect();
-    await this.eventConsumer.connect();
-    await this.eventConsumer.subscribe(
-      KafkaTopics.LIVE_BALL_EVENTS,
-      this.liveBallEventHandler.handle,
-    );
 
+    // http server creation
     this.server = http.createServer(this.app);
 
+    // create websocket infrastructure
     const { io, webSocketGateway } = createWebSocketInfrastructure(this.server);
-
     this.io = io;
     this.webSocketGateway = webSocketGateway;
 
-    setTimeout(() => {
-      console.log("TEST: emitting BALL_RECORDED to match:2");
-      this.webSocketGateway.emitToRoom("match:2", "BALL_RECORDED", {
-        matchId: 2,
-        innings: 1,
-        over: 10,
-        ball: 4,
-        runs: 6,
-        wicket: false,
-      });
-    }, 4000);
+    const scorecardRepository = new PostgresScorecardRepository(this.databaseClient)
+    const liveCache = new  RedisLiveCache(this.redisClient)
+    const liveUpdateService = new LiveUpdateService(scorecardRepository, liveCache, webSocketGateway, logger)
+
+    const liveBallEventHandler = new LiveBallEventHandler(liveUpdateService, logger)
+
+    await this.eventConsumer.connect();
+
+    await this.eventConsumer.subscribe(
+      KafkaTopics.LIVE_BALL_EVENTS,
+      liveBallEventHandler.handle,
+    );
 
     this.server.listen(this.port, () => {
       console.log(`CricZone API Running on ${this.port}`);
     });
   }
+
   async stop() {
     if (this.io) {
       await this.io.close();

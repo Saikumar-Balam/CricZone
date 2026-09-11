@@ -6,7 +6,6 @@ import "dotenv/config";
 
 import { createApp } from "./app.js";
 
-
 import ApplicationBootstrap
   from "./bootstrap/ApplicationBootstrap.js";
 
@@ -25,7 +24,7 @@ import {
 } from "./containers/Infrastructure.container.js";
 import { redisClient } from "./containers/redis.container.js";
 import { kafkaProducer } from "./containers/kafka.container.js";
-import { eventConsumer,liveBallEventHandler } from "./containers/messaging.container.js";
+import { eventConsumer} from "./containers/messaging.container.js";
 
 const PORT =
   process.env.PORT || 5000;
@@ -45,7 +44,6 @@ const bootstrap =
     redisClient,
     kafkaProducer,
     eventConsumer,
-    liveBallEventHandler,
     PORT
   );
 

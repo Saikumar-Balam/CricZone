@@ -2,6 +2,8 @@
 
 import express from "express";
 import cors from "cors";
+import { httpMetricsMiddleware } from "./containers/metrics.container.js";
+import router from "./routes/metrics.route.js";
 
 export const createApp = (
   apiRouter,
@@ -18,6 +20,7 @@ export const createApp = (
   app.use(requestIdMiddleware.handle);
 
   app.use(requestLoggingMiddleware.handle);
+  app.use(httpMetricsMiddleware.handle)
   app.use(rateLimitMiddleware.handle);
 
   app.use(express.json());
@@ -28,7 +31,8 @@ export const createApp = (
       service: "CricZone API",
     });
   });
-
+  // Prometheus endpoint
+  app.use("/metrics", router)
   // API routes
   app.use("/api/v1", apiRouter);
 

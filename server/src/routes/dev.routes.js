@@ -1,82 +1,89 @@
-import express from "express"
-import { eventProducer } from "../containers/messaging.container.js"
-import { KafkaTopics } from "../messaging/KafkaTopics.js"
-import { createEvent } from "../messaging/EventFactory.js"
+import express from "express";
 
-const router = express.Router()
+import { eventProducer } from "../containers/messaging.container.js";
+import { KafkaTopics } from "../messaging/KafkaTopics.js";
+import { createEvent } from "../messaging/EventFactory.js";
 
-router.post("/kafka-test", async(req, res, next) =>{
-    try{
-        const event = createEvent({
-            type: "BALL_RECORDED",
-            aggregateId: 2,
-            requestId: req.requestId,
+const router = express.Router();
 
-            payload:{
-                     matchId: 2,
+router.post("/kafka-test", async (req, res, next) => {
+  try {
+    const event = createEvent({
+      type: "BALL_RECORDED",
+      aggregateId: 2,
+      requestId: req.requestId,
 
-                    inningsId: 10,
-                    inningsNumber: 1,
+      payload: {
+        matchId: 2,
+        inningsId: 6,
+        inningsNumber: 1,
 
-                    battingTeamId: 1,
-                    bowlingTeamId: 2,
+        battingTeamId: 1,
+        bowlingTeamId: 2,
 
-                    overNumber: 6,
-                    ballNumber: 6,
+        overNumber: 0,
+        ballNumber: 5,
 
-                    strikerId: 17,
-                    nonStrikerId: 18,
-                    bowlerId: 31,
+        strikerId: 2,
+        nonStrikerId: 1,
+        bowlerId: 5,
 
-                    runs: {
-                        batsman: 1,
-                        extras: 0,
-                        total: 1
-                    },
+        runs: {
+          batsman: 0,
+          extras: 1,
+          total: 1
+        },
 
-                    extras: {
-                        wide: 0,
-                        noBall: 0,
-                        bye: 0,
-                        legBye: 0,
-                        penalty: 0
-                    },
+        extras: {
+          wide: 0,
+          noBall: 0,
+          bye: 1,
+          legBye: 0,
+          penalty: 0
+        },
 
-                    boundary: {
-                        four: false,
-                        six: false
-                    },
+        boundary: {
+          four: false,
+          six: false
+        },
 
-                    wicket: {
-                        occurred: false,
-                        type: null,
-                        dismissedPlayerId: null,
-                        fielderId: null,
-                        dismissalText: null
-                    },
+        wicket: {
+          occurred: false,
+          type: null,
+          dismissedPlayerId: null,
+          fielderId: null,
+          dismissalText: null
+        },
 
-                    legalDelivery: true,
+        legalDelivery: true,
 
-                    commentary: {
-                        text:
-                            "Bumrah to Virat",
-                        title: null
-                    }
-            }
-        })
+        commentary: {
+          title: null,
+          text: "Mitchell Starc to Jasprit Bumrah, 1 bye"
+        },
 
-        await eventProducer.publish(KafkaTopics.LIVE_BALL_EVENTS, event)
+        currentState: {
+          strikerId: 1,
+          nonStrikerId: 2,
+          bowlerId: 5
+        }
+      }
+    });
 
-        return res.status(200).json({
-            success: true,
-            message: "Kafka event published successfully",
-            event
-        })
-    }
-    catch(error)
-    {
-        next(error)
-    }
-})
+    await eventProducer.publish(
+      KafkaTopics.LIVE_BALL_EVENTS,
+      event
+    );
 
-export default router
+    return res.status(200).json({
+      success: true,
+      message: "Kafka event published successfully",
+      event
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+export default router;

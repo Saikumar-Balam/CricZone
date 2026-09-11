@@ -2,11 +2,12 @@ import EventConsumer from "./contracts/EventConsumer.js";
 
 export default class KafkaEventConsumer extends EventConsumer
 {
-    constructor(kafkaConsumer, logger)
+    constructor(kafkaConsumer, logger, metrics)
     {
         super()
         this.kafkaConsumer = kafkaConsumer
         this.logger = logger
+        this.metrics = metrics
     }
 
 
@@ -38,6 +39,7 @@ export default class KafkaEventConsumer extends EventConsumer
                     partition,
                     message
                 }) =>{
+                    const startTime = Date.now()
                     try{
                         const event = JSON.parse(message.value.toString())
                         await handler(event, {
@@ -46,13 +48,28 @@ export default class KafkaEventConsumer extends EventConsumer
                             offset: message.offset,
                             key: message.key?.toString()
                         })
+
+                        this.metrics.incrementCounter("kafka_events_consumed_total", 1, {topic,
+                            event_type: event.type ?? "UNKNOWN"
+                        })
+
+                        this.metrics.observeHistogram("kafka_event_processing_duration_ms", 
+                            Date.now() - startTime,{
+                                topic,
+                                event_type:event.type ?? "UNKNOWN"
+                            }
+                        )
                     }
                     catch(error){
+                        this.metrics.incrementCounter("kafka_event_failures_total", 1, {topic})
                         this.logger.error("Kafka event handling failed", {
-                            topic,
+                            topic,  
                             partition,
                             offset: message.offset,
-                            errorMessage: error.message
+                            key: message.key?.toString(),
+                            errorName: error.name,
+                            errorMessage: error.message,
+                            stack: error.stack
                         })
                         throw error
                     }

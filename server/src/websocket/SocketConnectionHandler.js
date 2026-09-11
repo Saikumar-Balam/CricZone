@@ -1,12 +1,16 @@
 export default class SocketConnectionHandler {
-    constructor(logger)
+    constructor(logger, metrics)
     {
         this.logger = logger
+        this.metrics = metrics 
         this.handle = this.handle.bind(this)
     }
 
     handle(socket)
     {
+        this.metrics.setGauge("websocket_connected_clients", 
+            socket.server.engine.clientsCount)
+
         this.logger.info("Websocket client connected", {
             socketId: socket.id
         })
@@ -32,6 +36,9 @@ export default class SocketConnectionHandler {
         })
 
         socket.on("disconnect", (reason) => {
+            this.metrics.setGauge("websocket_connected_clients_disconnected",
+                socket.server.engine.clientsCount)
+
             this.logger.info("Websocket client disconnected", {
                 socketId: socket.id,
                 reason
@@ -43,3 +50,5 @@ export default class SocketConnectionHandler {
 // Separation of concerns — room management is separate from broadcasting.
 // DI — logger is injected.
 // Encapsulation — room naming/connection behavior stays inside the WebSocket layer.
+// Observability
+// Connected client count is exposed through metrics.

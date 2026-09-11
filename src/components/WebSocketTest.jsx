@@ -26,6 +26,7 @@ const WebSocketTest = () => {
             socket.off("connect")
             socket.off("BALL_RECORDED")
             socket.off("disconnect")
+            socket.disconnect()
         }
     }, [])
 

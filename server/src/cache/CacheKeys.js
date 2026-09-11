@@ -21,12 +21,23 @@ export const CacheKeys = {
         `ranking:${type}:${format}`,
 
     playerStatistics: (playerId) =>
-        `statistics:${playerId}`,
+        `statistics:player:${playerId}`,
 
     teamStatistics: (teamId) =>
-        `statistics:${teamId}`,
+        `statistics:team:${teamId}`,
 
     seriesStatistics: (seriesId) =>
-        `statistics:${seriesId}`
+        `statistics:series:${seriesId}`,
+
+    // live-match caches
+    matchLive: (matchId) =>
+        `match:${matchId}:live`,
+
+    matchSummary: (matchId) =>
+        `match:${matchId}:summary`,
+
+    matchCommentary: (matchId) =>
+        `match:${matchId}:commentary`
+
 
 }
