@@ -2,6 +2,7 @@ import {Server} from "socket.io"
 import SocketIOGateway from "../websocket/SocketIOGateway.js"
 import SocketConnectionHandler from "../websocket/SocketConnectionHandler.js"
 import {logger} from "./logger.container.js"
+import { metrics } from "./metrics.container.js"
 
 export const createWebSocketInfrastructure = (httpServer) => {
     const io = new Server(httpServer, {
@@ -14,7 +15,7 @@ export const createWebSocketInfrastructure = (httpServer) => {
         }
     })
 
-    const webSocketGateway = new SocketIOGateway(io, logger)
+    const webSocketGateway = new SocketIOGateway(io, logger, metrics)
 
     const socketConnectionHandler = new SocketConnectionHandler(logger)
 

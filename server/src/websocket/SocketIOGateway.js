@@ -19,17 +19,17 @@ export default class SocketIOGateway extends WebSocketGateway
             event_type: event
         })
 
-        this.logger.debug("Websocket event broadcast", {
+        this.logger.debug("WebSocket event broadcast", {
             event
         })
     }
     catch(error)
     {
-        this.metrics.incrementCounter("webscoket_emit_failures_total", 1, {
+        this.metrics.incrementCounter("websocket_emit_failures_total", 1, {
             scope: "broadcast",
             event_type: event
         })
-        this.logger.error("WebScoket broadcast failed", {
+        this.logger.error("WebSocket broadcast failed", {
             event,
             errorMessage: error.message
         })
@@ -56,9 +56,9 @@ export default class SocketIOGateway extends WebSocketGateway
             scope: "room",
             event_type: event
         })
-        this.logger.error("WebSocket room emisison failed", {
+        this.logger.error("WebSocket room emission failed", {
             room,event,
-            errorMessage: error.messsage
+            errorMessage: error.message
         })
         throw error
     }

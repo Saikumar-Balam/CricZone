@@ -8,6 +8,10 @@ import RedisLiveCache from "../cache/redis/RedisLiveCache.js";
 import LiveUpdateService from "../services/LiveUpdateService.js";
 import { logger } from "../containers/logger.container.js";
 import LiveBallEventHandler from "../messaging/handlers/LiveBallEventHandler.js"
+import HealthService from "../health/HealthService.js";
+import HealthController from "../controllers/HealthController.js";
+import createHealthRouter from "../routes/health.route.js";
+import { metrics } from "../containers/metrics.container.js";
 
 
 export default class ApplicationBootstrap {
@@ -37,6 +41,13 @@ export default class ApplicationBootstrap {
 
     await this.kafkaProducer.connect();
 
+    // /health/readiness wirirng
+    const healthService = new HealthService(this.databaseClient, this.redisClient, this.kafkaProducer)
+    const healthController = new HealthController(healthService)
+    const healthRouter = createHealthRouter(healthController)
+
+    this.app.use("/", healthRouter)
+
     // http server creation
     this.server = http.createServer(this.app);
 
@@ -47,7 +58,7 @@ export default class ApplicationBootstrap {
 
     const scorecardRepository = new PostgresScorecardRepository(this.databaseClient)
     const liveCache = new  RedisLiveCache(this.redisClient)
-    const liveUpdateService = new LiveUpdateService(scorecardRepository, liveCache, webSocketGateway, logger)
+    const liveUpdateService = new LiveUpdateService(scorecardRepository, liveCache, webSocketGateway, logger, metrics)
 
     const liveBallEventHandler = new LiveBallEventHandler(liveUpdateService, logger)
 

@@ -15,6 +15,7 @@ export default class RequestLoggingMiddleware
                 "HTTP request completed",
                 {
                     requestId: req.requestId,
+                    traceId: req.traceId,
                     method: req.method,
                     path: req.originalUrl,
                     statusCode: res.statusCode,

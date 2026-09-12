@@ -5,6 +5,7 @@ import cors from "cors";
 import { httpMetricsMiddleware } from "./containers/metrics.container.js";
 import router from "./routes/metrics.route.js";
 
+
 export const createApp = (
   apiRouter,
   requestIdMiddleware,
@@ -25,12 +26,6 @@ export const createApp = (
 
   app.use(express.json());
 
-  app.get("/health", (req, res) => {
-    res.status(200).json({
-      status: "OK",
-      service: "CricZone API",
-    });
-  });
   // Prometheus endpoint
   app.use("/metrics", router)
   // API routes

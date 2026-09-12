@@ -6,6 +6,7 @@ export const createErrorHandler = (logger) => {
         {
             logger.error("HTTP request failed",{
                 requestId: req.requestId,
+                traceId: req.traceId,
                 method: req.method,
                 path: req.originalPath,
                 statusCode: err.statusCode,
@@ -25,11 +26,12 @@ export const createErrorHandler = (logger) => {
     }
         logger.error("Unhandled HTTP request error", {
             requestId: req.requestId,
+            traceId: req.traceId,
             method: req.method,
             path: req.originalUrl,
             statusCode: 500,
             errorCode: "INTERNAL_SERVER_ERROR",
-            errorMessage: err.message,
+            errorMessage: err.message,  
             stack:
                 process.env.NODE_ENV === "production"
                 ? undefined

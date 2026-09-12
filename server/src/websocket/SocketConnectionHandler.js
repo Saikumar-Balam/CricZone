@@ -36,7 +36,7 @@ export default class SocketConnectionHandler {
         })
 
         socket.on("disconnect", (reason) => {
-            this.metrics.setGauge("websocket_connected_clients_disconnected",
+            this.metrics.setGauge("websocket_connected_clients",
                 socket.server.engine.clientsCount)
 
             this.logger.info("Websocket client disconnected", {

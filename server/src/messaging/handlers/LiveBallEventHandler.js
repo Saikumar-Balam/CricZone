@@ -11,6 +11,8 @@ export default class LiveBallEventHandler {
       this.logger.warn(
         "Invalid live ball event skipped",
         {
+          traceId: event?.traceId,
+          requestId: event?.requestId,
           eventId: event?.eventId,
           eventType: event?.type,
           aggregateId: event?.aggregateId,
@@ -35,6 +37,8 @@ export default class LiveBallEventHandler {
         this.logger.warn(
           "Unsupported live ball event",
           {
+            traceId: event.traceId,
+            requestId: event.requestId,
             eventId: event.eventId,
             eventType: event.type,
             aggregateId: event.aggregateId
@@ -81,6 +85,7 @@ export default class LiveBallEventHandler {
       aggregateId,
       timestamp,
       requestId,
+      traceId,
       payload
     } = event
 
@@ -91,6 +96,7 @@ export default class LiveBallEventHandler {
         matchId: aggregateId,
         timestamp,
         requestId,
+        traceId,
         topic: metadata.topic,
         partition: metadata.partition,
         offset: metadata.offset,

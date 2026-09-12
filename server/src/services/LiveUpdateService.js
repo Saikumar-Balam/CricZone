@@ -15,7 +15,7 @@ export default class LiveUpdateService {
             this.metrics.incrementCounter("duplicate_ball_events_total", 1, {
                 event_type: event.type ?? "BALL_RECORDED"
             })
-            this.logger.warn("Duplicate BALL_RECORDED event ignored", {
+            this.logger.warn("Duplicate BALL_RECORDED event ignored", {traceId: event.traceId,
                 eventId: event.eventId,
                 matchId: event.payload.matchId
             })
@@ -57,7 +57,7 @@ export default class LiveUpdateService {
            
             await this.cache.setLiveState(event.payload.matchId, liveState)
 
-            this.logger.info("Live match state updated in cache", {
+            this.logger.info("Live match state updated in cache", {traceId: event.traceId,
                 matchId: event.payload.matchId,
                 inningsId: event.payload.inningsId,
                 eventId: event.eventId
@@ -66,7 +66,7 @@ export default class LiveUpdateService {
             await this.cache.invalidateScorecard(event.payload.matchId)
             await this.cache.invalidateSummary(event.payload.matchId)
 
-            this.logger.info("Live match caches refreshed", {
+            this.logger.info("Live match caches refreshed", {traceId: event.traceId,
                 matchId: event.payload.matchId,
                 eventId: event.eventId
             })
@@ -80,7 +80,7 @@ export default class LiveUpdateService {
                 await this.cache.appendCommentary(event.payload.matchId, commentaryEvent)
             }
 
-            this.logger.info("Commentary events appended to cache", {
+            this.logger.info("Commentary events appended to cache", {traceId: event.traceId,
                 matchId: event.payload.matchId,
                 eventId: event.eventId,
                 commentaryCount: commentaryEvents.length
@@ -90,6 +90,7 @@ export default class LiveUpdateService {
             if (result.inningsCompleted) {
                 await this.cache.promoteCompletedMatch(event.payload.matchId)
                 this.logger.info("Completed innings cache TTL updated", {
+                    traceId: event.traceId,
                     matchId: event.payload.matchId,
                     inningsId: event.payload.inningsId,
                     eventId: event.eventId
@@ -97,7 +98,7 @@ export default class LiveUpdateService {
             }
             this.logger.info(
                 "Live match cache operations completed",
-                {
+                {traceId: event.traceId,
                     matchId: event.payload.matchId,
                     inningsId: event.payload.inningsId,
                     eventId: event.eventId,
@@ -110,7 +111,7 @@ export default class LiveUpdateService {
             this.metrics.incrementCounter("live_update_failures_total", 1, {
                 stage: "redis"
             })
-            this.logger.error("Redis live cache update failed", {
+            this.logger.error("Redis live cache update failed", {traceId: event.traceId,
                 matchId: event.payload.matchId,
                 inningsId: event.payload.inningsId,
                 eventId: event.eventId,
@@ -124,7 +125,7 @@ export default class LiveUpdateService {
         this.webSocketGateway.emitToRoom(room, 'BALL_RECORDED', liveState)
 
         this.logger.info("Live ball update published through WebSocket",
-            {
+            {traceId: event.traceId,
                 matchId: event.payload.matchId,
                 inningsId: event.payload.inningsId,
                 eventId: event.eventId,
@@ -137,7 +138,7 @@ export default class LiveUpdateService {
         this.metrics.incrementCounter("live_update_failures_total", 1, {
             stage: "websocket"
         })
-        this.logger.error("WebSocket live update failed", {
+        this.logger.error("WebSocket live update failed", {traceId: event.traceId,
             matchId: event.payload.matchId,
             inningsId: event.payload.inningsId,
             eventId: event.eventId,

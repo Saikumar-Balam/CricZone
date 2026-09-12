@@ -4,7 +4,8 @@ export const createEvent =  ({
     type, 
     aggregateId,
      payload,
-    requestId = null
+    requestId = null,
+    traceId = null
 }) => {
     return  {
         eventId: randomUUID(),
@@ -14,6 +15,7 @@ export const createEvent =  ({
         timestamp: new Date().toISOString(),
 
         requestId,
+        traceId: traceId || crypto.randomUUID(),
 
         payload
     }

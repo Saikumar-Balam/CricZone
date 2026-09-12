@@ -12,6 +12,7 @@ router.post("/kafka-test", async (req, res, next) => {
       type: "BALL_RECORDED",
       aggregateId: 2,
       requestId: req.requestId,
+      traceId: req.traceId,
 
       payload: {
         matchId: 2,
