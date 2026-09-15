@@ -24,7 +24,10 @@ const kafka = new Kafka({
 
     password:
       process.env.KAFKA_PASSWORD
-  }
+  },
+  connectionTimeout: 10000,
+    authenticationTimeout: 10000,
+    requestTimeout: 30000
 })
 
 const kafkaProducer = kafka.producer()

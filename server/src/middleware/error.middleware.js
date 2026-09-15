@@ -8,7 +8,7 @@ export const createErrorHandler = (logger) => {
                 requestId: req.requestId,
                 traceId: req.traceId,
                 method: req.method,
-                path: req.originalPath,
+                path: req.originalUrl,
                 statusCode: err.statusCode,
                 errorCode: err.code,
                 errorMessage: err.message
@@ -19,7 +19,7 @@ export const createErrorHandler = (logger) => {
             success: false,
             error:{
                 code: err.code,
-                messgae: err.messgae,
+                message: err.message,
                 requestId: req.requestId
             }
         })

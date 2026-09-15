@@ -15,7 +15,7 @@ export const createEvent =  ({
         timestamp: new Date().toISOString(),
 
         requestId,
-        traceId: traceId || crypto.randomUUID(),
+        traceId: traceId || randomUUID(),
 
         payload
     }

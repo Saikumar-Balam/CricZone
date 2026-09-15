@@ -11,7 +11,7 @@ export default class MatchController
     try{
       const matches = await this.MatchService.getMatches()
       return res.status(200).json({
-        sucees: true,
+        success: true,
         data: matches
       })
     }

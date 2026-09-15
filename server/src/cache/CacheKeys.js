@@ -1,3 +1,5 @@
+const getPrefix = () => process.env.NODE_ENV === "test" ? "test:criczone:" : ""
+
 export const CacheKeys = {
     matchById: (matchId) => 
         `match:${matchId}`,
@@ -31,7 +33,7 @@ export const CacheKeys = {
 
     // live-match caches
     matchLive: (matchId) =>
-        `match:${matchId}:live`,
+    `${getPrefix()}match:${matchId}:live`,
 
     matchSummary: (matchId) =>
         `match:${matchId}:summary`,

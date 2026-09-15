@@ -30,7 +30,7 @@ export default class SeriesController
             const {seriesId} = req.params
             const series = await this.seriesService.getSeriesById(seriesId)
             return res.status(200).json({
-                succes: true,
+                success: true,
                 data: series
             })
         }

@@ -1,5 +1,5 @@
 import express from "express";
-import devRoutes from "./dev.routes.js"
+import NotFoundError from "../errors/NotFoundError.js"
 
 export const createApiRouter = ({
   matchRouter,
@@ -22,6 +22,16 @@ export const createApiRouter = ({
   router.use("/news", newsRouter);
   router.use("/statistics", statisticsRouter);
   router.use("/dev", devRouter)
+   router.use((req, res, next) => {
+
+        next(
+            new NotFoundError(
+                `Route ${req.method} ${req.originalUrl} was not found`,
+                "ROUTE_NOT_FOUND"
+            )
+        )
+
+    })
   return router;
 };
 // DIP
