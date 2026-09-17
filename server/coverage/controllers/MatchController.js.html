@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">83.33% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/12</span>
+                <span class='fraction'>10/12</span>
             </div>
         
             
@@ -37,16 +37,16 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/3</span>
+                <span class='fraction'>3/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">83.33% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/12</span>
+                <span class='fraction'>10/12</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -109,31 +109,31 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -149,17 +149,17 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">export default class MatchController
 {
-<span class="fstat-no" title="function not covered" >  constructor(</span>MatchService)
+  constructor(MatchService)
   {
-<span class="cstat-no" title="statement not covered" >    this.MatchService = MatchService</span>
-<span class="cstat-no" title="statement not covered" >    this.getMatches = this.getMatches.bind(this)</span>
-<span class="cstat-no" title="statement not covered" >    this.getMatchById = this.getMatchById.bind(this)</span>
+    this.MatchService = MatchService
+    this.getMatches = this.getMatches.bind(this)
+    this.getMatchById = this.getMatchById.bind(this)
   }
-  async <span class="fstat-no" title="function not covered" >getMatches(</span>req, res, next) 
+  async getMatches(req, res, next) 
   {
-<span class="cstat-no" title="statement not covered" >    try{</span>
-      const matches = <span class="cstat-no" title="statement not covered" >await this.MatchService.getMatches()</span>
-<span class="cstat-no" title="statement not covered" >      return res.status(200).json({</span>
+    try{
+      const matches = await this.MatchService.getMatches()
+      return res.status(200).json({
         success: true,
         data: matches
       })
@@ -170,12 +170,12 @@
     }
   }
 &nbsp;
-  async <span class="fstat-no" title="function not covered" >getMatchById(</span>req, res, next)
+  async getMatchById(req, res, next)
   {
-<span class="cstat-no" title="statement not covered" >    try{</span>
-    const {matchId} = <span class="cstat-no" title="statement not covered" >req.params</span>
-    const match = <span class="cstat-no" title="statement not covered" >await this.MatchService.getMatchById(matchId)</span>
-<span class="cstat-no" title="statement not covered" >    return res.status(200).json({</span>
+    try{
+    const {matchId} = req.params
+    const match = await this.MatchService.getMatchById(matchId)
+    return res.status(200).json({
       success: true,
       data: match,
     })
@@ -196,7 +196,7 @@
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-09-15T20:28:18.183Z
+                at 2026-09-16T13:49:25.896Z
             </div>
         <script src="../prettify.js"></script>
         <script>

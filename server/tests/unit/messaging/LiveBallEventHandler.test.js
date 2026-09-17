@@ -124,6 +124,102 @@ describe("Live Ball Event Handler", () => {
         // Act + Assert
         await expect(handler.handle(event)).rejects.toThrow("Live update failed")
     })
+    describe("isValidEvent()", () => {
+
+    it("should return false when event is null", () => {
+        expect(
+            handler.isValidEvent(null)
+        ).toBe(false);
+    });
+
+
+    it("should return false when eventId is missing", () => {
+
+        const event = {
+            type: "BALL_RECORDED",
+            aggregateId: "match-1",
+            payload: {}
+        };
+
+        expect(
+            handler.isValidEvent(event)
+        ).toBe(false);
+    });
+
+
+    it("should return false when eventId is not a valid UUID", () => {
+
+        const event = {
+            eventId: "invalid-id",
+            type: "BALL_RECORDED",
+            aggregateId: "match-1",
+            payload: {}
+        };
+
+        expect(
+            handler.isValidEvent(event)
+        ).toBe(false);
+    });
+
+
+    it("should return false when event type is missing", () => {
+
+        const event = {
+            eventId: "550e8400-e29b-41d4-a716-446655440000",
+            aggregateId: "match-1",
+            payload: {}
+        };
+
+        expect(
+            handler.isValidEvent(event)
+        ).toBe(false);
+    });
+
+
+    it("should return false when aggregateId is null", () => {
+
+        const event = {
+            eventId: "550e8400-e29b-41d4-a716-446655440000",
+            type: "BALL_RECORDED",
+            aggregateId: null,
+            payload: {}
+        };
+
+        expect(
+            handler.isValidEvent(event)
+        ).toBe(false);
+    });
+
+
+    it("should return false when payload is missing", () => {
+
+        const event = {
+            eventId: "550e8400-e29b-41d4-a716-446655440000",
+            type: "BALL_RECORDED",
+            aggregateId: "match-1"
+        };
+
+        expect(
+            handler.isValidEvent(event)
+        ).toBe(false);
+    });
+
+
+    it("should return true for valid event", () => {
+
+        const event = {
+            eventId: "550e8400-e29b-41d4-a716-446655440000",
+            type: "BALL_RECORDED",
+            aggregateId: "match-1",
+            payload: {}
+        };
+
+        expect(
+            handler.isValidEvent(event)
+        ).toBe(true);
+    });
+
+});
 
 })
 
@@ -136,6 +232,8 @@ describe("Live Ball Event Handler", () => {
 
 // DIP
 // Handler works against collaborator behavior rather than creating dependencies.
+
+// Delegation — processing is delegated to LiveUpdateService.
 
 // Isolation
 // Kafka/Redis/PostgreSQL/WebSocket are excluded.

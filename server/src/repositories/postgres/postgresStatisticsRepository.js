@@ -11,15 +11,7 @@ export default class PostgresStatisticsRepository
   }
 
 
-  // ==================================================
-  // PLAYER STATISTICS
-  // ==================================================
-
   async findPlayerStatistics(playerId) {
-
-    // --------------------------------------------------
-    // BATTING BY FORMAT
-    // --------------------------------------------------
 
     const battingByFormatQuery = `
       SELECT

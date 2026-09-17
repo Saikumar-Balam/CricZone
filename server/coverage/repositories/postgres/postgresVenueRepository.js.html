@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/11</span>
+                <span class='fraction'>11/11</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/2</span>
+                <span class='fraction'>2/2</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/4</span>
+                <span class='fraction'>4/4</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/11</span>
+                <span class='fraction'>11/11</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -189,13 +189,13 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -210,13 +210,13 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -231,16 +231,16 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -284,12 +284,12 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -310,14 +310,14 @@
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import VenueRepository from "../contracts/VenueRepository.js";
 &nbsp;
 export default class PostgresVenueRepository extends VenueRepository {
-<span class="fstat-no" title="function not covered" >  constructor(</span>databaseClient) {
-<span class="cstat-no" title="statement not covered" >    super();</span>
+  constructor(databaseClient) {
+    super();
 &nbsp;
-<span class="cstat-no" title="statement not covered" >    this.databaseClient = databaseClient;</span>
+    this.databaseClient = databaseClient;
   }
 &nbsp;
-  async <span class="fstat-no" title="function not covered" >findAll(</span>) {
-    const query = <span class="cstat-no" title="statement not covered" >`</span>
+  async findAll() {
+    const query = `
       SELECT
         id,
         name,
@@ -332,13 +332,13 @@ export default class PostgresVenueRepository extends VenueRepository {
     `;
 &nbsp;
     const result =
-<span class="cstat-no" title="statement not covered" >      await this.databaseClient.query(query);</span>
+      await this.databaseClient.query(query);
 &nbsp;
-<span class="cstat-no" title="statement not covered" >    return result.rows;</span>
+    return result.rows;
   }
 &nbsp;
-  async <span class="fstat-no" title="function not covered" >findById(</span>venueId) {
-    const query = <span class="cstat-no" title="statement not covered" >`</span>
+  async findById(venueId) {
+    const query = `
       SELECT
         id,
         name,
@@ -353,16 +353,16 @@ export default class PostgresVenueRepository extends VenueRepository {
     `;
 &nbsp;
     const result =
-<span class="cstat-no" title="statement not covered" >      await this.databaseClient.query(</span>
+      await this.databaseClient.query(
         query,
         [venueId]
       );
 &nbsp;
-<span class="cstat-no" title="statement not covered" >    return result.rows[0] ?? null;</span>
+    return result.rows[0] ?? null;
   }
 &nbsp;
-  async <span class="fstat-no" title="function not covered" >findMatchesByVenueId(</span>venueId) {
-    const query = <span class="cstat-no" title="statement not covered" >`</span>
+  async findMatchesByVenueId(venueId) {
+    const query = `
       SELECT
         m.id,
 &nbsp;
@@ -406,12 +406,12 @@ export default class PostgresVenueRepository extends VenueRepository {
     `;
 &nbsp;
     const result =
-<span class="cstat-no" title="statement not covered" >      await this.databaseClient.query(</span>
+      await this.databaseClient.query(
         query,
         [venueId]
       );
 &nbsp;
-<span class="cstat-no" title="statement not covered" >    return result.rows;</span>
+    return result.rows;
   }
 }
 &nbsp;
@@ -436,7 +436,7 @@ export default class PostgresVenueRepository extends VenueRepository {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-09-15T20:28:18.183Z
+                at 2026-09-16T13:49:25.896Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

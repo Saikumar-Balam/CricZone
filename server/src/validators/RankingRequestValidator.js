@@ -1,4 +1,5 @@
-import RankingNotFoundError from "../errors/RankingNotFoundError.js";
+
+import ValidationError from "../errors/ValidationError.js";
 import RankingValidator from "./contracts/RankingValidator.js";
 
 export default class RankingRequestValidator extends RankingValidator
@@ -8,7 +9,7 @@ export default class RankingRequestValidator extends RankingValidator
         const id = Number(rankingId)
         if(!Number.isInteger(id) || id<=0)
         {
-            throw new RankingNotFoundError("rankingId must be a positive integer",
+            throw new ValidationError("rankingId must be a positive integer",
                 "INVALID_RANKING_ID"
             )
         }

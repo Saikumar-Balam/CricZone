@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/14</span>
+                <span class='fraction'>14/14</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/9</span>
+                <span class='fraction'>9/9</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/2</span>
+                <span class='fraction'>2/2</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/14</span>
+                <span class='fraction'>14/14</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -125,41 +125,41 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">14x</span>
+<span class="cline-any cline-yes">14x</span>
+<span class="cline-any cline-yes">14x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -174,46 +174,46 @@
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import RateLimiter from "./contracts/RateLimiter.js";
 &nbsp;
 export default class InMemoryRateLimiter extends RateLimiter {
-<span class="fstat-no" title="function not covered" >    constructor(</span>{
-        limit =<span class="branch-0 cbranch-no" title="branch not covered" >100, </span>
-        windowMs = <span class="branch-0 cbranch-no" title="branch not covered" >60 * 1000</span>
-    } = <span class="branch-0 cbranch-no" title="branch not covered" >{})</span>
+    constructor({
+        limit =100, 
+        windowMs = 60 * 1000
+    } = {})
     {
-<span class="cstat-no" title="statement not covered" >        super()</span>
-<span class="cstat-no" title="statement not covered" >        this.limit = limit</span>
-<span class="cstat-no" title="statement not covered" >        this.windowMs = windowMs</span>
-<span class="cstat-no" title="statement not covered" >        this.clients = new Map() </span>// to store the requests of the clients
+        super()
+        this.limit = limit
+        this.windowMs = windowMs
+        this.clients = new Map() // to store the requests of the clients
     }
 &nbsp;
-    async <span class="fstat-no" title="function not covered" >consume(</span>key)
+    async consume(key)
     {
-        const now = <span class="cstat-no" title="statement not covered" >Date.now()</span>
-        const client =  <span class="cstat-no" title="statement not covered" >this.clients.get(key)</span>
-<span class="cstat-no" title="statement not covered" >        if(!client || now&gt;=client.resetAt)</span>
+        const now = Date.now()
+        const client =  this.clients.get(key)
+        if(!client || now&gt;=client.resetAt)
         {
-            const resetAt = <span class="cstat-no" title="statement not covered" >now + this.windowMs</span>
-<span class="cstat-no" title="statement not covered" >            this.clients.set(key, {</span>
+            const resetAt = now + this.windowMs
+            this.clients.set(key, {
                 count:1,
                 resetAt
             })
 &nbsp;
-<span class="cstat-no" title="statement not covered" >            return {</span>
+            return {
                 allowed: true,
                 remaining: this.limit - 1,
                 resetAt
             }
         }
-<span class="cstat-no" title="statement not covered" >        if(client.count&gt;=this.limit)</span>
+        if(client.count&gt;=this.limit)
         {
-<span class="cstat-no" title="statement not covered" >            return{</span>
+            return{
                 allowed: false,
                 remaining: 0,
                 resetAt: client.resetAt
             }
         }
-<span class="cstat-no" title="statement not covered" >        client.count+=1</span>
+        client.count+=1
 &nbsp;
-<span class="cstat-no" title="statement not covered" >        return {</span>
+        return {
             allowed: true,
             remaining: this.limit - client.count,
             resetAt: client.resetAt
@@ -232,7 +232,7 @@ export default class InMemoryRateLimiter extends RateLimiter {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-09-15T20:28:18.183Z
+                at 2026-09-16T13:49:25.896Z
             </div>
         <script src="../prettify.js"></script>
         <script>

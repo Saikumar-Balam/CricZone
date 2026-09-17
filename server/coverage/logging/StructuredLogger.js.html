@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/6</span>
+                <span class='fraction'>6/6</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/5</span>
+                <span class='fraction'>5/5</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/5</span>
+                <span class='fraction'>5/5</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/6</span>
+                <span class='fraction'>6/6</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -109,33 +109,33 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -147,35 +147,35 @@
 &nbsp;
 export default class StructuredLogger extends Logger
 {
-<span class="fstat-no" title="function not covered" >    info(</span>message, metadata = <span class="branch-0 cbranch-no" title="branch not covered" >{})</span>
+    info(message, metadata = {})
     {
-<span class="cstat-no" title="statement not covered" >        this.log("INFO", message, metadata)</span>
+        this.log("INFO", message, metadata)
     }
 &nbsp;
-<span class="fstat-no" title="function not covered" >    warn(</span>message, metadata = <span class="branch-0 cbranch-no" title="branch not covered" >{})</span>
+    warn(message, metadata = {})
     {
-<span class="cstat-no" title="statement not covered" >        this.log("WARN", message, metadata)</span>
+        this.log("WARN", message, metadata)
     }
 &nbsp;
-<span class="fstat-no" title="function not covered" >    error(</span>message, metadata = <span class="branch-0 cbranch-no" title="branch not covered" >{})</span>
+    error(message, metadata = {})
     {
-<span class="cstat-no" title="statement not covered" >        this.log("ERROR", message, metadata)</span>
+        this.log("ERROR", message, metadata)
     }
 &nbsp;
-<span class="fstat-no" title="function not covered" >    debug(</span>message, metadata = <span class="branch-0 cbranch-no" title="branch not covered" >{})</span>
+    debug(message, metadata = {})
     {
-<span class="cstat-no" title="statement not covered" >        this.log("DEBUG", message, metadata)</span>
+        this.log("DEBUG", message, metadata)
     }
 &nbsp;
-<span class="fstat-no" title="function not covered" >    log(</span>level, message, metadata = <span class="branch-0 cbranch-no" title="branch not covered" >{})</span>
+    log(level, message, metadata = {})
     {
-        const logEntry = <span class="cstat-no" title="statement not covered" >{</span>
+        const logEntry = {
             timestamp: new Date().toISOString(),
             level,
             message,
             ...metadata
         }
-<span class="cstat-no" title="statement not covered" >        console.log(JSON.stringify(logEntry))</span>
+        console.log(JSON.stringify(logEntry))
     }
 }
 &nbsp;
@@ -190,7 +190,7 @@ export default class StructuredLogger extends Logger
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-09-15T20:28:18.183Z
+                at 2026-09-16T13:49:25.896Z
             </div>
         <script src="../prettify.js"></script>
         <script>

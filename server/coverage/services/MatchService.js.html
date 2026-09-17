@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/14</span>
+                <span class='fraction'>14/14</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/4</span>
+                <span class='fraction'>4/4</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/3</span>
+                <span class='fraction'>3/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/14</span>
+                <span class='fraction'>14/14</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -129,31 +129,31 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -186,33 +186,33 @@ import { CacheKeys } from "../cache/CacheKeys.js";
 import { CacheTTL } from "../cache/CacheTTL.js";
 &nbsp;
 export default class MatchService {
-<span class="fstat-no" title="function not covered" >    constructor(</span>MatchRepository, cache)
+    constructor(MatchRepository, cache)
     {
-<span class="cstat-no" title="statement not covered" >        this.MatchRepository = MatchRepository</span>
-<span class="cstat-no" title="statement not covered" >        this.cache = cache</span>
+        this.MatchRepository = MatchRepository
+        this.cache = cache
     }
-    async <span class="fstat-no" title="function not covered" >getMatches(</span>)
+    async getMatches()
     {
-<span class="cstat-no" title="statement not covered" >        return await this.MatchRepository.findAll()</span>
+        return await this.MatchRepository.findAll()
     }
-    async <span class="fstat-no" title="function not covered" >getMatchById(</span>matchId)
+    async getMatchById(matchId)
     {
-        const cacheKey = <span class="cstat-no" title="statement not covered" >CacheKeys.matchById(matchId)</span>
-        const cachedMatch = <span class="cstat-no" title="statement not covered" >await this.cache.get(cacheKey)</span>
-<span class="cstat-no" title="statement not covered" >        if(cachedMatch)</span>
+        const cacheKey = CacheKeys.matchById(matchId)
+        const cachedMatch = await this.cache.get(cacheKey)
+        if(cachedMatch)
         {
-<span class="cstat-no" title="statement not covered" >             console.log(`CACHE HIT: ${cacheKey}`);</span>
-<span class="cstat-no" title="statement not covered" >            return cachedMatch</span>
+             console.log(`CACHE HIT: ${cacheKey}`);
+            return cachedMatch
         }
-<span class="cstat-no" title="statement not covered" >        console.log(`CACHE MISS: ${cacheKey}`);</span>
+        console.log(`CACHE MISS: ${cacheKey}`);
 &nbsp;
-        const match = <span class="cstat-no" title="statement not covered" >await this.MatchRepository.findById(matchId);</span>
-<span class="cstat-no" title="statement not covered" >        if(!match)</span>
+        const match = await this.MatchRepository.findById(matchId);
+        if(!match)
         {
-<span class="cstat-no" title="statement not covered" >            throw new MatchNotFoundError(matchId)</span>
+            throw new MatchNotFoundError(matchId)
         }
-<span class="cstat-no" title="statement not covered" >        await this.cache.set(cacheKey,match, CacheTTL.MATCH)</span>
-<span class="cstat-no" title="statement not covered" >        return match;</span>
+        await this.cache.set(cacheKey,match, CacheTTL.MATCH)
+        return match;
     }
 }
 //     SRP
@@ -247,7 +247,7 @@ export default class MatchService {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-09-15T20:28:18.183Z
+                at 2026-09-16T13:49:25.896Z
             </div>
         <script src="../prettify.js"></script>
         <script>

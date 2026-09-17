@@ -69,4 +69,119 @@ describe("HttpMetricsMiddleware", () => {
             status: "500"
         }))
     })
+    it("should use req.path when req.route is unavailable", () => {
+
+    const req = {
+        method: "GET",
+        path: "/api/matches"
+    };
+
+    const callbacks = {};
+
+    const res = {
+        statusCode: 200,
+        on: vi.fn((event, callback) => {
+            callbacks[event] = callback;
+        })
+    };
+
+    middleware.handle(req, res, next);
+
+    callbacks.finish();
+
+    expect(metrics.incrementCounter)
+        .toHaveBeenCalledWith(
+            "http_requests_total",
+            1,
+            {
+                method: "GET",
+                route: "/api/matches",
+                status: "200"
+            }
+        );
+
+    expect(metrics.observeHistogram)
+        .toHaveBeenCalledWith(
+            "http_request_duration_ms",
+            expect.any(Number),
+            {
+                method: "GET",
+                route: "/api/matches"
+            }
+        );
+});
+
+
+it("should increment error counter for HTTP 4xx response", () => {
+
+    const req = {
+        method: "GET",
+        route: {
+            path: "/matches/:id"
+        },
+        path: "/matches/999"
+    };
+
+    const callbacks = {};
+
+    const res = {
+        statusCode: 404,
+        on: vi.fn((event, callback) => {
+            callbacks[event] = callback;
+        })
+    };
+
+    middleware.handle(req, res, next);
+
+    callbacks.finish();
+
+    expect(metrics.incrementCounter)
+        .toHaveBeenCalledWith(
+            "http_errors_total",
+            1,
+            {
+                method: "GET",
+                route: "/matches/:id",
+                status: "404"
+            }
+        );
+});
+
+
+it("should not increment error counter for successful response", () => {
+
+    const req = {
+        method: "GET",
+        route: {
+            path: "/matches"
+        },
+        path: "/matches"
+    };
+
+    const callbacks = {};
+
+    const res = {
+        statusCode: 200,
+        on: vi.fn((event, callback) => {
+            callbacks[event] = callback;
+        })
+    };
+
+    middleware.handle(req, res, next);
+
+    callbacks.finish();
+
+    expect(metrics.incrementCounter)
+        .not.toHaveBeenCalledWith(
+            "http_errors_total",
+            expect.anything(),
+            expect.anything()
+        );
+});
 })
+// SRP — middleware only collects HTTP metrics.
+// DI — metrics dependency is injected.
+// DIP — middleware isn't coupled to PrometheusMetrics.
+// OCP — metrics implementation can be replaced without modifying the middleware.
+// Separation of Concerns — observability stays outside controllers/services.
+// Testability — metrics and response events can be mocked independently.

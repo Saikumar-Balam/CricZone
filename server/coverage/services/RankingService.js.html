@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/8</span>
+                <span class='fraction'>8/8</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/2</span>
+                <span class='fraction'>2/2</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/5</span>
+                <span class='fraction'>5/5</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/8</span>
+                <span class='fraction'>8/8</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -105,32 +105,32 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -140,34 +140,34 @@
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import RankingNotFoundError from "../errors/RankingNotFoundError.js"
 &nbsp;
 export default class RankingService {
-<span class="fstat-no" title="function not covered" >    constructor(</span>rankingRepository)
+    constructor(rankingRepository)
     {
-<span class="cstat-no" title="statement not covered" >        this.rankingRepository = rankingRepository</span>
+        this.rankingRepository = rankingRepository
     }
 &nbsp;
-    async <span class="fstat-no" title="function not covered" >getRankings(</span>)
+    async getRankings()
     {
-<span class="cstat-no" title="statement not covered" >        return await this.rankingRepository.findAll()</span>
+        return await this.rankingRepository.findAll()
     }
 &nbsp;
-    async <span class="fstat-no" title="function not covered" >getRankingsById(</span>rankingId)
+    async getRankingsById(rankingId)
     {
-        const ranking = <span class="cstat-no" title="statement not covered" >await this.rankingRepository.findById(rankingId)</span>
-<span class="cstat-no" title="statement not covered" >        if(!ranking)</span>
+        const ranking = await this.rankingRepository.findById(rankingId)
+        if(!ranking)
         {
-<span class="cstat-no" title="statement not covered" >            throw new RankingNotFoundError(rankingId)</span>
+            throw new RankingNotFoundError(rankingId)
         }
-<span class="cstat-no" title="statement not covered" >        return ranking;</span>
+        return ranking;
     }
 &nbsp;
-    async <span class="fstat-no" title="function not covered" >getPlayerRankings(</span>)
+    async getPlayerRankings()
     {
-<span class="cstat-no" title="statement not covered" >        return await this.rankingRepository.findPlayerRankings()</span>
+        return await this.rankingRepository.findPlayerRankings()
     }
 &nbsp;
-    async <span class="fstat-no" title="function not covered" >getTeamRankings(</span>)
+    async getTeamRankings()
     {
-<span class="cstat-no" title="statement not covered" >        return await this.rankingRepository.findTeamRankings()</span>
+        return await this.rankingRepository.findTeamRankings()
     }
 }
 // Service Layer Pattern
@@ -181,7 +181,7 @@ export default class RankingService {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-09-15T20:28:18.183Z
+                at 2026-09-16T13:49:25.896Z
             </div>
         <script src="../prettify.js"></script>
         <script>

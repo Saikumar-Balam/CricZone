@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">46.66% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/15</span>
+                <span class='fraction'>7/15</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">50% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/2</span>
+                <span class='fraction'>1/2</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">42.85% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/14</span>
+                <span class='fraction'>6/14</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">46.66% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/15</span>
+                <span class='fraction'>7/15</span>
             </div>
         
             
@@ -107,17 +107,14 @@
 <a name='L42'></a><a href='#L42'>42</a>
 <a name='L43'></a><a href='#L43'>43</a>
 <a name='L44'></a><a href='#L44'>44</a>
-<a name='L45'></a><a href='#L45'>45</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L45'></a><a href='#L45'>45</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">43x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">11x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">35x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -141,24 +138,27 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">43x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">33x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">const <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >getPrefix = () =&gt; process.env.NODE_ENV === "</span>test" ? "test:criczone:" : ""</span>
+<span class="cline-any cline-yes">41x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">const getPrefix = () =&gt; process.env.NODE_ENV === "test" ? "test:criczone:" : <span class="branch-1 cbranch-no" title="branch not covered" >""</span>
 &nbsp;
-export const CacheKeys = <span class="cstat-no" title="statement not covered" >{</span>
-<span class="fstat-no" title="function not covered" >    matchById: (m</span>atchId) =&gt; 
-<span class="cstat-no" title="statement not covered" >        `match:${matchId}`,</span>
+export const CacheKeys = {
+    matchById: (matchId) =&gt; 
+        `match:${matchId}`,
 &nbsp;
-<span class="fstat-no" title="function not covered" >    scorecardByMatchId: (m</span>atchId) =&gt;
-<span class="cstat-no" title="statement not covered" >        `scorecard:${matchId}`,</span>
+    scorecardByMatchId: (matchId) =&gt;
+        `scorecard:${matchId}`,
 &nbsp;
 <span class="fstat-no" title="function not covered" >    playerById: (p</span>layerId) =&gt;
 <span class="cstat-no" title="statement not covered" >        `player:${playerId}`,</span>
@@ -185,14 +185,14 @@ export const CacheKeys = <span class="cstat-no" title="statement not covered" >{
 <span class="cstat-no" title="statement not covered" >        `statistics:series:${seriesId}`,</span>
 &nbsp;
     // live-match caches
-<span class="fstat-no" title="function not covered" >    matchLive: (m</span>atchId) =&gt;
-<span class="cstat-no" title="statement not covered" >    `${getPrefix()}match:${matchId}:live`,</span>
+    matchLive: (matchId) =&gt;
+    `${getPrefix()}match:${matchId}:live`,
 &nbsp;
-<span class="fstat-no" title="function not covered" >    matchSummary: (m</span>atchId) =&gt;
-<span class="cstat-no" title="statement not covered" >        `match:${matchId}:summary`,</span>
+    matchSummary: (matchId) =&gt;
+        `match:${matchId}:summary`,
 &nbsp;
-<span class="fstat-no" title="function not covered" >    matchCommentary: (m</span>atchId) =&gt;
-<span class="cstat-no" title="statement not covered" >        `match:${matchId}:commentary`</span>
+    matchCommentary: (matchId) =&gt;
+        `match:${matchId}:commentary`
 &nbsp;
 &nbsp;
 }</pre></td></tr></table></pre>
@@ -202,7 +202,7 @@ export const CacheKeys = <span class="cstat-no" title="statement not covered" >{
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-09-15T20:28:18.183Z
+                at 2026-09-16T13:49:25.896Z
             </div>
         <script src="../prettify.js"></script>
         <script>

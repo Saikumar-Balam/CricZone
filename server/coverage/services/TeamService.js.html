@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/16</span>
+                <span class='fraction'>16/16</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/4</span>
+                <span class='fraction'>4/4</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/7</span>
+                <span class='fraction'>7/7</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/16</span>
+                <span class='fraction'>16/16</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -121,44 +121,44 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">11x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -171,46 +171,46 @@
 &nbsp;
 export default class TeamService
 {
-<span class="fstat-no" title="function not covered" >    constructor(</span>teamRepository)
+    constructor(teamRepository)
     {
-<span class="cstat-no" title="statement not covered" >        this.teamRepository = teamRepository</span>
+        this.teamRepository = teamRepository
     }
-    async <span class="fstat-no" title="function not covered" >getTeams(</span>)
+    async getTeams()
     {
-<span class="cstat-no" title="statement not covered" >        return await this.teamRepository.findAll()</span>
+        return await this.teamRepository.findAll()
     }
-    async <span class="fstat-no" title="function not covered" >getTeamById(</span>teamId)
+    async getTeamById(teamId)
     {
-        const team = <span class="cstat-no" title="statement not covered" >await this.teamRepository.findById(teamId)</span>
-<span class="cstat-no" title="statement not covered" >        if(!team)</span>
+        const team = await this.teamRepository.findById(teamId)
+        if(!team)
         {
-<span class="cstat-no" title="statement not covered" >            throw new TeamNotFoundError(teamId)</span>
+            throw new TeamNotFoundError(teamId)
         }
-<span class="cstat-no" title="statement not covered" >        return team;</span>
+        return team;
     }
-    async <span class="fstat-no" title="function not covered" >getPlayersByTeamId(</span>teamId)
+    async getPlayersByTeamId(teamId)
     {
-<span class="cstat-no" title="statement not covered" >        await this.ensureTeamExists(teamId)</span>
-<span class="cstat-no" title="statement not covered" >        return await this.teamRepository.findPlayersByTeamId(teamId)</span>
+        await this.ensureTeamExists(teamId)
+        return await this.teamRepository.findPlayersByTeamId(teamId)
     }
-    async <span class="fstat-no" title="function not covered" >getMatchesByTeamId(</span>teamId)
+    async getMatchesByTeamId(teamId)
     {
-<span class="cstat-no" title="statement not covered" >        await this.ensureTeamExists(teamId)</span>
-<span class="cstat-no" title="statement not covered" >        return await this.teamRepository.findMatchesByTeamId(teamId)</span>
+        await this.ensureTeamExists(teamId)
+        return await this.teamRepository.findMatchesByTeamId(teamId)
     }
-    async <span class="fstat-no" title="function not covered" >getRankingByTeamId(</span>teamId)
+    async getRankingByTeamId(teamId)
     {
-<span class="cstat-no" title="statement not covered" >        await this.ensureTeamExists(teamId)</span>
-<span class="cstat-no" title="statement not covered" >        return await this.teamRepository.findRankingByTeamId(teamId)</span>
+        await this.ensureTeamExists(teamId)
+        return await this.teamRepository.findRankingByTeamId(teamId)
     }
-    async <span class="fstat-no" title="function not covered" >ensureTeamExists(</span>teamId)
+    async ensureTeamExists(teamId)
     {
-        const team = <span class="cstat-no" title="statement not covered" >await this.teamRepository.findById(teamId)</span>
-<span class="cstat-no" title="statement not covered" >        if(!team)</span>
+        const team = await this.teamRepository.findById(teamId)
+        if(!team)
         {
-<span class="cstat-no" title="statement not covered" >            throw new TeamNotFoundError(teamId)</span>
+            throw new TeamNotFoundError(teamId)
         }
-<span class="cstat-no" title="statement not covered" >        return team;</span>
+        return team;
     }
 }
 // LLD principles here:
@@ -226,7 +226,7 @@ export default class TeamService
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-09-15T20:28:18.183Z
+                at 2026-09-16T13:49:25.896Z
             </div>
         <script src="../prettify.js"></script>
         <script>

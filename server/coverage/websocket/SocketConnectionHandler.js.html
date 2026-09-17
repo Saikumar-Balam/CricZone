@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/16</span>
+                <span class='fraction'>16/16</span>
             </div>
         
             
@@ -37,16 +37,16 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/5</span>
+                <span class='fraction'>5/5</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/16</span>
+                <span class='fraction'>16/16</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -119,45 +119,45 @@
 <a name='L54'></a><a href='#L54'>54</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-yes">10x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">11x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">11x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">11x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">11x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">11x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">8x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -170,47 +170,47 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">export default class SocketConnectionHandler {
-<span class="fstat-no" title="function not covered" >    constructor(</span>logger, metrics)
+    constructor(logger, metrics)
     {
-<span class="cstat-no" title="statement not covered" >        this.logger = logger</span>
-<span class="cstat-no" title="statement not covered" >        this.metrics = metrics </span>
-<span class="cstat-no" title="statement not covered" >        this.handle = this.handle.bind(this)</span>
+        this.logger = logger
+        this.metrics = metrics 
+        this.handle = this.handle.bind(this)
     }
 &nbsp;
-<span class="fstat-no" title="function not covered" >    handle(</span>socket)
+    handle(socket)
     {
-<span class="cstat-no" title="statement not covered" >        this.metrics.setGauge("websocket_connected_clients", </span>
+        this.metrics.setGauge("websocket_connected_clients", 
             socket.server.engine.clientsCount)
 &nbsp;
-<span class="cstat-no" title="statement not covered" >        this.logger.info("Websocket client connected", {</span>
+        this.logger.info("Websocket client connected", {
             socketId: socket.id
         })
 &nbsp;
-<span class="cstat-no" title="statement not covered" >        socket.on("join-match", <span class="fstat-no" title="function not covered" >(m</span>atchId) =&gt; {</span>
-            const room = <span class="cstat-no" title="statement not covered" >`match:${matchId}`</span>
-<span class="cstat-no" title="statement not covered" >            socket.join(room)</span>
-<span class="cstat-no" title="statement not covered" >            this.logger.info("Websocket client joined match room",{</span>
+        socket.on("join-match", (matchId) =&gt; {
+            const room = `match:${matchId}`
+            socket.join(room)
+            this.logger.info("Websocket client joined match room",{
                 socketId: socket.id,
                 matchId,
                 room
             })
         })
 &nbsp;
-<span class="cstat-no" title="statement not covered" >        socket.on("leave-match", <span class="fstat-no" title="function not covered" >(m</span>atchId) =&gt; {</span>
-            const room = <span class="cstat-no" title="statement not covered" >`match:${matchId}`</span>
-<span class="cstat-no" title="statement not covered" >            socket.leave(room)</span>
-<span class="cstat-no" title="statement not covered" >            this.logger.info("Websocket client left match room",{</span>
+        socket.on("leave-match", (matchId) =&gt; {
+            const room = `match:${matchId}`
+            socket.leave(room)
+            this.logger.info("Websocket client left match room",{
                 socketId: socket.id,
                 matchId,
                 room
             })
         })
 &nbsp;
-<span class="cstat-no" title="statement not covered" >        socket.on("disconnect", <span class="fstat-no" title="function not covered" >(r</span>eason) =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >            this.metrics.setGauge("websocket_connected_clients",</span>
+        socket.on("disconnect", (reason) =&gt; {
+            this.metrics.setGauge("websocket_connected_clients",
                 socket.server.engine.clientsCount)
 &nbsp;
-<span class="cstat-no" title="statement not covered" >            this.logger.info("Websocket client disconnected", {</span>
+            this.logger.info("Websocket client disconnected", {
                 socketId: socket.id,
                 reason
             })
@@ -229,7 +229,7 @@
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-09-15T20:28:18.183Z
+                at 2026-09-16T13:49:25.896Z
             </div>
         <script src="../prettify.js"></script>
         <script>

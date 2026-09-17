@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/9</span>
+                <span class='fraction'>9/9</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/2</span>
+                <span class='fraction'>2/2</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/3</span>
+                <span class='fraction'>3/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/9</span>
+                <span class='fraction'>9/9</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -124,35 +124,35 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -180,28 +180,28 @@
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import ScorecardNotFoundError from "../errors/ScorecardNotFoundError.js";
 &nbsp;
 export default class ScorecardService {
-<span class="fstat-no" title="function not covered" >  constructor(</span>scorecardRepository) {
-<span class="cstat-no" title="statement not covered" >    this.scorecardRepository = scorecardRepository;</span>
+  constructor(scorecardRepository) {
+    this.scorecardRepository = scorecardRepository;
   }
 &nbsp;
-  async <span class="fstat-no" title="function not covered" >getScorecardByMatchId(</span>matchId) {
+  async getScorecardByMatchId(matchId) {
     const scorecard =
-<span class="cstat-no" title="statement not covered" >      await this.scorecardRepository.findByMatchId(matchId);</span>
-<span class="cstat-no" title="statement not covered" >    if (!scorecard) {</span>
-<span class="cstat-no" title="statement not covered" >      throw new ScorecardNotFoundError(matchId);</span>
+      await this.scorecardRepository.findByMatchId(matchId);
+    if (!scorecard) {
+      throw new ScorecardNotFoundError(matchId);
     }
-    const innings = <span class="cstat-no" title="statement not covered" >await this.scorecardRepository.findInningsByScorecardId(</span>
+    const innings = await this.scorecardRepository.findInningsByScorecardId(
       scorecard.id,
     );
 &nbsp;
-    const inningsWithPerformances = <span class="cstat-no" title="statement not covered" >await Promise.all(</span>
-      innings.map(<span class="fstat-no" title="function not covered" >async </span>(inning) =&gt; {
-        const [batting_performances, bowling_performances] = <span class="cstat-no" title="statement not covered" >await Promise.all([</span>
+    const inningsWithPerformances = await Promise.all(
+      innings.map(async (inning) =&gt; {
+        const [batting_performances, bowling_performances] = await Promise.all([
           this.scorecardRepository.findBattingPerformancesByInningsId(
             inning.id),
             this.scorecardRepository.findBowlingPerformancesByInningsId(inning.id),
         ]);
-<span class="cstat-no" title="statement not covered" >        return {</span>
+        return {
             ...inning,
             batting_performances,
             bowling_performances
@@ -209,7 +209,7 @@ export default class ScorecardService {
       }),
     );
 &nbsp;
-<span class="cstat-no" title="statement not covered" >     return {</span>
+     return {
             id: scorecard.id,
             matchId: scorecard.match_id,
             innings: inningsWithPerformances
@@ -241,7 +241,7 @@ export default class ScorecardService {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-09-15T20:28:18.183Z
+                at 2026-09-16T13:49:25.896Z
             </div>
         <script src="../prettify.js"></script>
         <script>
