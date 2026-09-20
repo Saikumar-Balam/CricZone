@@ -21,3 +21,5 @@ export default class DatabaseClient
         throw new Error("disconnect() must be implemented")
     }
 }
+
+// SRP — DB client handles DB connectivity; config handles configuration.

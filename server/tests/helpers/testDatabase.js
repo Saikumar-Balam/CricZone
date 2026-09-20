@@ -13,5 +13,15 @@ export function createTestDatabase()
     {
         throw new Error("TEST_DATABASE_URL is not configured")
     }
-    return new PostgresDatabaseClient(connectionString)
+    return new PostgresDatabaseClient({connectionString,
+        // Neon requires TLS
+        ssl: {
+            rejectUnauthorized: true,
+        },
+        // Test-specific pool configuration
+        max: 5,
+        idleTimeoutMillis: 10000,
+        connectionTimeoutMillis: 5000,
+        statementTimeoutMillis: 5000
+    })
 }

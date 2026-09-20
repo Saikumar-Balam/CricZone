@@ -3,6 +3,7 @@
 
 
 import "dotenv/config";
+import {validateEnvironment} from "./config/env.js"
 
 import { createApp } from "./app.js";
 
@@ -17,23 +18,28 @@ import {
 } from "./containers/app.container.js";
 
 import {
+  corsMiddleware,
   requestIdMiddleware,
   requestLoggingMiddleware,
   errorHandler, 
-  rateLimitMiddleware
+  rateLimitMiddleware,
+  jsonErrorMiddleware,
+  securityHeadersMiddleware
 } from "./containers/Infrastructure.container.js";
 import { redisClient } from "./containers/redis.container.js";
 import { kafkaProducer } from "./containers/kafka.container.js";
 import { eventConsumer} from "./containers/messaging.container.js";
 
-const PORT =
-  process.env.PORT || 5000;
+const {port: PORT} = validateEnvironment()
 
 const app = createApp(
   apiRouter,
+  corsMiddleware,
+  securityHeadersMiddleware,
   requestIdMiddleware,
   requestLoggingMiddleware,
   rateLimitMiddleware,
+  jsonErrorMiddleware,
   errorHandler
 );
 

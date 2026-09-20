@@ -263,6 +263,71 @@ describe("Trace ID Middleware", () => {
 
 describe("Rate Limit Middleware", () => {
 
+    it("should set correct Retry-After when rate limit is exceeded", async () => {
+
+        vi.useFakeTimers({
+            toFake: ["Date"]
+        })
+
+        vi.setSystemTime(
+            new Date("2026-09-20T12:00:00.000Z")
+        )
+
+        try {
+
+            const now =
+                Date.now()
+
+            const {
+                app
+            } = createRateLimitApp({
+                allowed: false,
+                remaining: 0,
+
+                // Window resets in 60 seconds.
+                resetAt:
+                    now + 60_000
+            })
+
+            const response =
+                await request(app)
+                    .get("/test")
+
+            expect(response.status)
+                .toBe(429)
+
+            expect(
+                response.headers[
+                    "retry-after"
+                ]
+            ).toBe("60")
+
+            expect(
+                response.headers[
+                    "x-ratelimit-remaining"
+                ]
+            ).toBe("0")
+
+            expect(
+                response.headers[
+                    "x-ratelimit-reset"
+                ]
+            ).toBe(
+                String(
+                    Math.ceil(
+                        (now + 60_000) / 1000
+                    )
+                )
+            )
+
+        }
+        finally {
+
+            vi.useRealTimers()
+        }
+    })
+
+
     function createRateLimitApp(rateLimitResult) {
 
         const rateLimiter = {
@@ -282,8 +347,10 @@ describe("Rate Limit Middleware", () => {
         // Simulates RequestIDMiddleware having
         // already populated requestId.
         app.use((req, res, next) => {
+
             req.requestId =
                 "test-request-id"
+
             next()
         })
 
@@ -296,7 +363,6 @@ describe("Rate Limit Middleware", () => {
             return res.status(200).json({
                 success: true
             })
-
         })
 
         return {
@@ -317,11 +383,9 @@ describe("Rate Limit Middleware", () => {
             resetAt: 1000
         })
 
-
         const response =
             await request(app)
                 .get("/test")
-
 
         expect(response.status)
             .toBe(200)
@@ -341,7 +405,7 @@ describe("Rate Limit Middleware", () => {
             response.headers[
                 "x-ratelimit-reset"
             ]
-        ).toBe("1000")
+        ).toBe("1")
 
         expect(rateLimiter.consume)
             .toHaveBeenCalledOnce()
@@ -364,19 +428,17 @@ describe("Rate Limit Middleware", () => {
             resetAt: 2000
         })
 
-
         const response =
             await request(app)
                 .get("/test")
 
-
         expect(response.status)
             .toBe(429)
-
 
         expect(response.body)
             .toEqual({
                 success: false,
+
                 error: {
                     code:
                         "RATE_LIMIT_EXCEEDED",
@@ -389,20 +451,17 @@ describe("Rate Limit Middleware", () => {
                 }
             })
 
-
         expect(
             response.headers[
                 "x-ratelimit-remaining"
             ]
         ).toBe("0")
 
-
         expect(
             response.headers[
                 "x-ratelimit-reset"
             ]
-        ).toBe("2000")
-
+        ).toBe("2")
 
         expect(rateLimiter.consume)
             .toHaveBeenCalledOnce()

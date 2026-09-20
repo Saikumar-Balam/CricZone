@@ -43,7 +43,7 @@ describe("RateLimiterMiddleware", () => {
         // Assert
         expect(rateLimiter.consume).toHaveBeenCalledWith("127.0.0.1")
         expect(res.setHeader).toHaveBeenCalledWith("X-RateLimit-Remaining", 9)
-        expect(res.setHeader).toHaveBeenCalledWith("X-RateLimit-Reset", 1000)
+        expect(res.setHeader).toHaveBeenCalledWith("X-RateLimit-Reset", 1)
         expect(next).toHaveBeenCalledTimes(1)
         expect(res.status).not.toHaveBeenCalled()
     })
@@ -60,7 +60,7 @@ describe("RateLimiterMiddleware", () => {
         // Assert
         expect(rateLimiter.consume).toHaveBeenCalledWith("127.0.0.1")
         expect(res.setHeader).toHaveBeenCalledWith("X-RateLimit-Remaining", 0)
-        expect(res.setHeader).toHaveBeenCalledWith("X-RateLimit-Reset", 1000)
+        expect(res.setHeader).toHaveBeenCalledWith("X-RateLimit-Reset", 1)
         expect(res.status).toHaveBeenCalledWith(429)
         expect(res.json).toHaveBeenCalledWith({
             success: false,

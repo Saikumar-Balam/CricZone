@@ -6,10 +6,15 @@ import DatabaseClient from "../contracts/DatabaseClient.js";
 const { Pool } = pg;
 
 export default class PostgresDatabaseClient extends DatabaseClient {
-  constructor(connectionString) {
+  constructor(config) {
     super();
     this.pool = new Pool({
-      connectionString,
+      connectionString: config.connectionString,
+      ssl: config.ssl,
+      max: config.max,
+      idleTimeoutMillis: config.idleTimeoutMillis,
+      connectionTimeoutMillis: config.connectionTimeoutMillis,
+      statementTimeoutMillis: config.statementTimeoutMillis
     });
   }
   async connect() {
@@ -30,3 +35,9 @@ export default class PostgresDatabaseClient extends DatabaseClient {
     await this.pool.end();
   }
 }
+
+// DI — complete pool configuration is injected.
+// DIP — PostgresDatabaseClient doesn't depend directly on environment variables.
+// Composition Root — database.container.js assembles the concrete dependency.
+// Encapsulation — repositories/services know nothing about pg.Pool.
+// Open/Closed Principle — pool behavior can change through configuration without modifying repositories.

@@ -11,10 +11,12 @@ export default class RateLimiterMiddleware
         try{
             const key = req.ip
             const result = await this.rateLimiter.consume(key)
+            const resetInSeconds = Math.max(Math.ceil((result.resetAt - Date.now())/1000), 0)
             res.setHeader("X-RateLimit-Remaining", result.remaining)
-            res.setHeader("X-RateLimit-Reset", result.resetAt)
+            res.setHeader("X-RateLimit-Reset", Math.ceil(result.resetAt/1000))
             if(!result.allowed)
             {
+                res.setHeader("Retry-After", resetInSeconds)
                 return res.status(429).json({
                     success: false,
                     error:{

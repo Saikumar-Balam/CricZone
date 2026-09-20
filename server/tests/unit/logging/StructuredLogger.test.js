@@ -1,21 +1,47 @@
-import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import StructuredLogger from "../../../src/logging/StructuredLogger.js";
+import {
+    beforeEach,
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from "vitest";
+
+import StructuredLogger
+    from "../../../src/logging/StructuredLogger.js";
+
+import LogSanitizer
+    from "../../../src/logging/LogSanitizer.js";
+
 
 describe("StructuredLogger", () => {
 
     let logger;
     let consoleSpy;
+    let logSanitizer;
+
 
     beforeEach(() => {
-        logger = new StructuredLogger();
+
+        logSanitizer =
+            new LogSanitizer();
+
+        logger =
+            new StructuredLogger(
+                logSanitizer
+            );
 
         consoleSpy = vi
             .spyOn(console, "log")
             .mockImplementation(() => {});
+
     });
 
+
     afterEach(() => {
+
         vi.restoreAllMocks();
+
     });
 
 
@@ -27,17 +53,22 @@ describe("StructuredLogger", () => {
                 .spyOn(logger, "log")
                 .mockImplementation(() => {});
 
-            logger.info("Server started", {
-                port: 3000
-            });
-
-            expect(logSpy).toHaveBeenCalledWith(
-                "INFO",
+            logger.info(
                 "Server started",
                 {
                     port: 3000
                 }
             );
+
+            expect(logSpy)
+                .toHaveBeenCalledWith(
+                    "INFO",
+                    "Server started",
+                    {
+                        port: 3000
+                    }
+                );
+
         });
 
 
@@ -47,13 +78,17 @@ describe("StructuredLogger", () => {
                 .spyOn(logger, "log")
                 .mockImplementation(() => {});
 
-            logger.info("Server started");
-
-            expect(logSpy).toHaveBeenCalledWith(
-                "INFO",
-                "Server started",
-                {}
+            logger.info(
+                "Server started"
             );
+
+            expect(logSpy)
+                .toHaveBeenCalledWith(
+                    "INFO",
+                    "Server started",
+                    {}
+                );
+
         });
 
     });
@@ -67,17 +102,22 @@ describe("StructuredLogger", () => {
                 .spyOn(logger, "log")
                 .mockImplementation(() => {});
 
-            logger.warn("High memory usage", {
-                usage: 80
-            });
-
-            expect(logSpy).toHaveBeenCalledWith(
-                "WARN",
+            logger.warn(
                 "High memory usage",
                 {
                     usage: 80
                 }
             );
+
+            expect(logSpy)
+                .toHaveBeenCalledWith(
+                    "WARN",
+                    "High memory usage",
+                    {
+                        usage: 80
+                    }
+                );
+
         });
 
     });
@@ -91,17 +131,22 @@ describe("StructuredLogger", () => {
                 .spyOn(logger, "log")
                 .mockImplementation(() => {});
 
-            logger.error("Database failure", {
-                database: "postgres"
-            });
-
-            expect(logSpy).toHaveBeenCalledWith(
-                "ERROR",
+            logger.error(
                 "Database failure",
                 {
                     database: "postgres"
                 }
             );
+
+            expect(logSpy)
+                .toHaveBeenCalledWith(
+                    "ERROR",
+                    "Database failure",
+                    {
+                        database: "postgres"
+                    }
+                );
+
         });
 
     });
@@ -115,17 +160,22 @@ describe("StructuredLogger", () => {
                 .spyOn(logger, "log")
                 .mockImplementation(() => {});
 
-            logger.debug("Processing event", {
-                eventId: "event-1"
-            });
-
-            expect(logSpy).toHaveBeenCalledWith(
-                "DEBUG",
+            logger.debug(
                 "Processing event",
                 {
                     eventId: "event-1"
                 }
             );
+
+            expect(logSpy)
+                .toHaveBeenCalledWith(
+                    "DEBUG",
+                    "Processing event",
+                    {
+                        eventId: "event-1"
+                    }
+                );
+
         });
 
     });
@@ -143,21 +193,37 @@ describe("StructuredLogger", () => {
                 }
             );
 
-            expect(consoleSpy).toHaveBeenCalledOnce();
+            expect(consoleSpy)
+                .toHaveBeenCalledOnce();
 
             const output =
-                JSON.parse(consoleSpy.mock.calls[0][0]);
+                JSON.parse(
+                    consoleSpy.mock.calls[0][0]
+                );
 
-            expect(output).toEqual({
-                timestamp: expect.any(String),
-                level: "INFO",
-                message: "Application started",
-                service: "criczone"
-            });
+            expect(output)
+                .toEqual({
+                    timestamp:
+                        expect.any(String),
+
+                    level:
+                        "INFO",
+
+                    message:
+                        "Application started",
+
+                    service:
+                        "criczone"
+                });
 
             expect(
-                new Date(output.timestamp).toISOString()
-            ).toBe(output.timestamp);
+                new Date(
+                    output.timestamp
+                ).toISOString()
+            ).toBe(
+                output.timestamp
+            );
+
         });
 
 
@@ -169,22 +235,81 @@ describe("StructuredLogger", () => {
             );
 
             const output =
-                JSON.parse(consoleSpy.mock.calls[0][0]);
+                JSON.parse(
+                    consoleSpy.mock.calls[0][0]
+                );
 
-            expect(output.level).toBe("INFO");
-            expect(output.message).toBe("Application started");
-            expect(output.timestamp).toEqual(
-                expect.any(String)
+            expect(output.level)
+                .toBe("INFO");
+
+            expect(output.message)
+                .toBe(
+                    "Application started"
+                );
+
+            expect(output.timestamp)
+                .toEqual(
+                    expect.any(String)
+                );
+
+        });
+
+
+        it("should sanitize sensitive metadata before logging", () => {
+
+            logger.log(
+                "INFO",
+                "User request",
+                {
+                    username:
+                        "criczone-user",
+
+                    password:
+                        "secret123",
+
+                    token:
+                        "private-token"
+                }
             );
+
+            const output =
+                JSON.parse(
+                    consoleSpy.mock.calls[0][0]
+                );
+
+            expect(output.username)
+                .toBe(
+                    "criczone-user"
+                );
+
+            expect(output.password)
+                .toBe(
+                    "[REDACTED]"
+                );
+
+            expect(output.token)
+                .toBe(
+                    "[REDACTED]"
+                );
+
         });
 
     });
 
 });
 
-// SRP — StructuredLogger is responsible only for structured logging.
-// Abstraction — It implements the logging abstraction defined by Logger.
-// LSP — StructuredLogger can be used wherever the Logger abstraction is expected.
-// OCP — New logger implementations can be introduced without changing consumers of the Logger abstraction.
-// DRY — info, warn, error, and debug delegate common formatting/output behavior to log().
-// Testability — console.log is isolated with a spy, allowing logging behavior to be verified without producing real test output.
+
+// SRP — StructuredLogger handles structured logging,
+// while LogSanitizer handles sensitive-data sanitization.
+
+// DIP — StructuredLogger depends on an injected
+// sanitization dependency instead of creating it internally.
+
+// DI — LogSanitizer is supplied through the
+// StructuredLogger constructor.
+
+// Separation of Concerns — logging and
+// security sanitization remain separate responsibilities.
+
+// Testability — dependencies and console output
+// can be controlled independently during tests.

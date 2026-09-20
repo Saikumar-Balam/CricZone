@@ -1023,3 +1023,11 @@ export default class PostgresScorecardRepository extends ScorecardRepository {
 // Atomicity
 // Testability
 // Transaction Script
+
+// Repository Pattern — transaction persistence stays in repository.
+// Atomicity — all ball-related changes commit or rollback together.
+// DI/DIP — database client is injected.
+// Resource Safety — connection is always released in finally.
+// Concurrency Control — FOR UPDATE protects mutable innings/bowling state.
+// Idempotency — duplicate eventId processing is prevented.
+// Transaction Script — one business operation coordinates one atomic transaction.

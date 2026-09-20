@@ -21,7 +21,11 @@ export const createApiRouter = ({
   router.use("/rankings", rankingRouter);
   router.use("/news", newsRouter);
   router.use("/statistics", statisticsRouter);
+  // runs only in development and testing not in production 
+  if(process.env.NODE_ENV !== "production" && devRouter)
+  {
   router.use("/dev", devRouter)
+  }
    router.use((req, res, next) => {
 
         next(
@@ -45,3 +49,10 @@ export const createApiRouter = ({
 // Composition Root pattern
 
 // Object creation and dependency wiring are kept outside the business components.
+
+// Environment Isolation — development-only behavior doesn't leak into production.
+// Fail Securely — testing endpoints aren't exposed publicly.
+// SRP — routing decides which routes exist; Kafka services don't need production checks.
+// Separation of Concerns — deployment behavior stays separate from business logic.
+// Configuration Isolation — NODE_ENV controls environment-specific behavior centrally.
+// Least Exposure — production exposes only endpoints required by the actual application.

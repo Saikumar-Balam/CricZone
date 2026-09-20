@@ -17,7 +17,7 @@ export default class RequestLoggingMiddleware
                     requestId: req.requestId,
                     traceId: req.traceId,
                     method: req.method,
-                    path: req.originalUrl,
+                    path: req.path,
                     statusCode: res.statusCode,
                     durationMs
                 }
@@ -46,3 +46,9 @@ export default class RequestLoggingMiddleware
 // Separation of Concerns
 // Request ID generation and request logging remain
 // different middleware classes.
+
+// SRP — request middleware logs request metadata only.
+// Defense in Depth — safe request logging plus centralized sanitization.
+// Data Minimization — log only information needed for observability.
+// Separation of Concerns — request logging and secret sanitization remain separate.
+// Encapsulation — callers don't need to know how LogSanitizer performs redaction.
