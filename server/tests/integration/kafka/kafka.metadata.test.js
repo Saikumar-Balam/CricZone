@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { createTestKafka } from "../../helpers/testKafka.js";
+import { createTestKafka, createTestKafkaProducer } from "../../helpers/testKafka.js";
 
 import { createEvent } from "../../../src/messaging/EventFactory.js";
 
@@ -10,7 +10,7 @@ describe("Kafka Event Metadata Integration", () => {
 
         const kafka = createTestKafka();
 
-        const producer = kafka.producer();
+        const producer = createTestKafkaProducer(kafka);
 
         const consumer = kafka.consumer({
             groupId: `criczone-test-metadata-${Date.now()}`

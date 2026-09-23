@@ -12,6 +12,7 @@ import HealthService from "../health/HealthService.js";
 import HealthController from "../controllers/HealthController.js";
 import createHealthRouter from "../routes/health.route.js";
 import { metrics } from "../containers/metrics.container.js";
+import withTimeout from "../utils/withTimeout.js";
 
 
 export default class ApplicationBootstrap {
@@ -21,6 +22,8 @@ export default class ApplicationBootstrap {
     redisClient,
     kafkaProducer,
     eventConsumer,
+    kafkaAdmin,
+    kafkaHealthChecker,
     port,
   ) {
     this.app = app;
@@ -28,8 +31,34 @@ export default class ApplicationBootstrap {
     this.redisClient = redisClient;
     this.kafkaProducer = kafkaProducer;
     this.eventConsumer = eventConsumer;
+    this.kafkaAdmin = kafkaAdmin
+    this.kafkaHealthChecker = kafkaHealthChecker
     this.port = port;
     this.server = null;
+  }
+  registerShutdownHandlers()
+  {
+    let isShuttingDown = false
+    const shutdown = async(signal) => {
+      if(isShuttingDown)
+      {
+        return 
+      }
+      isShuttingDown = true 
+      console.log(`${signal} received. Shutting down gracefully...`)
+      try {
+        await this.stop()
+        console.log("CricZone shutdown completed")
+        process.exit(0)
+      }
+      catch(error)
+      {
+        console.error("Graceful shutdown failed:", error.message)
+        process.exit(1)
+      }
+    }
+    process.on("SIGTERM", () => shutdown("SIGTERM"))
+    process.on("SIGINT", () => shutdown("SIGINT"))
   }
   async start() {
     await this.databaseClient.connect();
@@ -40,9 +69,10 @@ export default class ApplicationBootstrap {
     }
 
     await this.kafkaProducer.connect();
+    await this.kafkaAdmin.connect()
 
     // /health/readiness wirirng
-    const healthService = new HealthService(this.databaseClient, this.redisClient, this.kafkaProducer)
+    const healthService = new HealthService(this.databaseClient, this.redisClient, this.kafkaHealthChecker)
     const healthController = new HealthController(healthService)
     const healthRouter = createHealthRouter(healthController)
 
@@ -72,29 +102,124 @@ export default class ApplicationBootstrap {
     this.server.listen(this.port, () => {
       console.log(`CricZone API Running on ${this.port}`);
     });
+    this.registerShutdownHandlers()
   }
 
   async stop() {
+    const errors = []
     if (this.io) {
+      console.log("1. Closing WebSocket and http server...")
+      try {
       await this.io.close();
+      console.log("1. websocket connection and http server are closed")
+      }
+      catch(error)
+      {
+        console.log("1. websocket/HTTP connection closed failed")
+        errors.push({resource: "WebSocket", error})
+      }
+    }
+    // stop accepting http traffic
+    else if(this.server)
+      {
+      console.log("1. Closing HTTP server...")
+      try {
+      await new Promise((resolve, reject) => {
+        this.server.close((error) =>{
+          if(error)
+          {
+            reject(error)
+            return
+          }
+          resolve()
+        })
+      })
+       console.log("1. HTTP server closed")
+    }
+    catch(error)
+    {
+      errors.push({resource: "HTTP Server", error})
+      console.log("1. HTTP server close FAILED")
+    }
     }
 
-    if (this.eventConsumer) {
-      await this.eventConsumer.disconnect();
+    // close Kafka consumer connection
+    console.log("2. Disconnecting Event Consumer...")
+    if(this.eventConsumer)
+    {
+      try {
+        await withTimeout(this.eventConsumer.disconnect(), 10000, "Kafka consumer disconnect")
+        console.log("2. event consumer connection closed")
+      }
+      catch(error)
+      {
+        errors.push({resource: "Kafka Consumer Disconnect", error})
+        console.error("2. event consumer connection closed fail", error.message)
+      }
     }
-
+    console.log("3. Kafka Producer closing...")
     if (this.kafkaProducer) {
+      try {
       await this.kafkaProducer.disconnect();
+      console.log("3. Kafka Producer connection closed")
+      }
+      catch(error)
+      {
+        errors.push({resource: "Kafka Producer", error})
+        console.log("3. Kafka Producer connection closed failed")
+      }
     }
 
+    console.log("4. Kafka Admin closing...")
+    if(this.kafkaAdmin)
+    {
+      try {
+        await this.kafkaAdmin.disconnect()
+        console.log("4. Kafka Admin connection closed")
+      }
+      catch(error)
+      {
+        errors.push({resource: "Kafka Admin", error})
+        console.log("4. Kafka Admin connection closed failed")
+      }
+    }
+
+    console.log("5. redisClient closing...")
     if (this.redisClient && this.redisClient.isOpen) {
+      try {
       await this.redisClient.disconnect();
+      console.log("5.redisClient connection closed")
+      }
+      catch(error)
+      {
+        errors.push({resource: "Redis", error})
+        console.log("5. redisClient connection closed failed")
+      }
     }
-    await this.databaseClient.disconnect();
 
-    if (this.server) {
-      this.server.close();
+    console.log("6. PostgreSQL closing...")
+    if(this.databaseClient)
+    {
+      try {
+    await this.databaseClient.disconnect();
+    console.log("6. PostgreSQL connection closed")
+      }
+      catch(error)
+      {
+        errors.push({resource: "PotsgreSQL", error})
+        console.log("6. PostgreSQL connection closed failed")
+      }
     }
+    // Report cleanup failures only after every resource received a shutdown attempt
+    if(errors.length>0)
+    {
+      for(const failure of errors)
+      {
+        console.error(`${failure.resource} shutdown failed:`, failure.error.message)
+      }
+      throw new AggregateError(errors.map(failure => failure.error), "One or more resources failed to shutdown")
+    }
+
   }
 }
 
@@ -119,10 +244,18 @@ export default class ApplicationBootstrap {
 
 // OCP/LSP  — KafkaEventProducer can later be replaced by another valid EventProducer.
 
-// websocket
-// SRP
-// Lifecycle Management
-// Factory Pattern
-// Dependency Injection
-// Separation of Concerns
-// Graceful Shutdown
+// Lifecycle Management — startup and shutdown remain centralized.
+// SRP — ApplicationBootstrap owns application lifecycle.
+// DI — bootstrap shuts down injected infrastructure dependencies.
+// Composition Root — server.js remains wiring-only.
+// Resource Safety — HTTP, WebSocket, Kafka, Redis, and PostgreSQL are explicitly closed.
+// Idempotency — duplicate shutdown signals don't run cleanup twice.
+
+// Graceful Shutdown — existing traffic is allowed to finish before infrastructure disappears.
+
+// Resource Safety — every resource gets a cleanup attempt.
+// Failure Isolation — one disconnect failure doesn't block unrelated cleanup.
+// Lifecycle Management — ApplicationBootstrap centrally controls shutdown.
+// SRP — bootstrap remains responsible for application lifecycle.
+// Error Aggregation — cleanup errors are collected and reported after cleanup attempts.
+// Dependency Ordering — Kafka processing infrastructure is stopped before Redis/PostgreSQL.

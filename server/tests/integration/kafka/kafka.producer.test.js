@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { createTestKafka } from "../../helpers/testKafka.js";
+import { createTestKafka, createTestKafkaProducer } from "../../helpers/testKafka.js";
 
 describe("Kafka Producer Integration",  () => {
     it("should connect to Kafka Producer", async () => {
         const kafka = createTestKafka()
-        const producer = kafka.producer()
+        const producer = createTestKafkaProducer(kafka)
         try{
             await producer.connect()
             expect(producer).toBeDefined()

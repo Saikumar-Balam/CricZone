@@ -14,8 +14,8 @@ export default class HealthService {
             kafka: false
         }
         try{
-            await this.databaseClient.query("select 1")
-            checks.database = true
+           const databaseHealth =  await this.databaseClient.healthCheck()
+            checks.database = databaseHealth.healthy
         }
         catch{
             checks.database = false 

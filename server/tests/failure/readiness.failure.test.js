@@ -10,7 +10,7 @@ import HealthService
     from "../../src/health/HealthService.js"
 
 
-describe("17.13.5 Readiness Failure", () => {
+describe("Readiness Failure", () => {
 
     let databaseClient
     let redisClient
@@ -21,9 +21,9 @@ describe("17.13.5 Readiness Failure", () => {
     beforeEach(() => {
 
         databaseClient = {
-            query: vi.fn()
+            healthCheck: vi.fn()
                 .mockResolvedValue({
-                    rows: [{ "?column?": 1 }]
+                    healthy: true
                 })
         }
 
@@ -47,9 +47,10 @@ describe("17.13.5 Readiness Failure", () => {
 
     it("should report not ready when PostgreSQL is unavailable", async () => {
 
-        databaseClient.query.mockRejectedValue(
-            new Error("PostgreSQL unavailable")
-        )
+        databaseClient.healthCheck
+            .mockResolvedValue({
+                healthy: false
+            })
 
         const result =
             await healthService.checkReadiness()
@@ -68,19 +69,18 @@ describe("17.13.5 Readiness Failure", () => {
 
     it("should continue checking Redis and Kafka after PostgreSQL failure", async () => {
 
-        databaseClient.query.mockRejectedValue(
-            new Error("PostgreSQL unavailable")
-        )
+        databaseClient.healthCheck
+            .mockResolvedValue({
+                healthy: false
+            })
 
         await healthService.checkReadiness()
 
         expect(redisClient.ping)
             .toHaveBeenCalledOnce()
 
-        expect(databaseClient.query)
-            .toHaveBeenCalledWith(
-                "select 1"
-            )
+        expect(databaseClient.healthCheck)
+            .toHaveBeenCalledOnce()
     })
 
 
@@ -131,9 +131,10 @@ describe("17.13.5 Readiness Failure", () => {
 
     it("should report all failed dependencies independently", async () => {
 
-        databaseClient.query.mockRejectedValue(
-            new Error("PostgreSQL unavailable")
-        )
+        databaseClient.healthCheck
+            .mockResolvedValue({
+                healthy: false
+            })
 
         redisClient.ping.mockRejectedValue(
             new Error("Redis unavailable")
@@ -163,9 +164,10 @@ describe("17.13.5 Readiness Failure", () => {
 
     it("should not throw when dependency checks fail", async () => {
 
-        databaseClient.query.mockRejectedValue(
-            new Error("PostgreSQL unavailable")
-        )
+        databaseClient.healthCheck
+            .mockResolvedValue({
+                healthy: false
+            })
 
         redisClient.ping.mockRejectedValue(
             new Error("Redis unavailable")
@@ -210,3 +212,10 @@ describe("17.13.5 Readiness Failure", () => {
     })
 
 })
+
+// DIP — HealthService uses DatabaseClient.healthCheck().
+// DI — database, Redis, and Kafka dependencies are injected.
+// Contract-based testing — mock behavior matches the real database abstraction.
+// Encapsulation — PostgreSQL-specific SELECT 1 is hidden from HealthService.
+// SRP — readiness service aggregates health; DB client determines DB health.
+// Failure Isolation — one failed dependency doesn't prevent checking the others.

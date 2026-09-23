@@ -1,4 +1,4 @@
-import {Kafka} from "kafkajs"
+import {Kafka, Partitioners} from "kafkajs"
 import fs from "node:fs"
 export function createTestKafka()
 {
@@ -33,4 +33,9 @@ export function createTestKafka()
             password: process.env.TEST_KAFKA_PASSWORD
         }
     })
+}
+
+export function createTestKafkaProducer(kafka)
+{
+    return kafka.producer({createPartitioner: Partitioners.DefaultPartitioner})
 }

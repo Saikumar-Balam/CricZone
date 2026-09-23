@@ -27,7 +27,7 @@ import {
   securityHeadersMiddleware
 } from "./containers/Infrastructure.container.js";
 import { redisClient } from "./containers/redis.container.js";
-import { kafkaProducer } from "./containers/kafka.container.js";
+import { kafkaAdmin, kafkaHealthChecker, kafkaProducer } from "./containers/kafka.container.js";
 import { eventConsumer} from "./containers/messaging.container.js";
 
 const {port: PORT} = validateEnvironment()
@@ -50,6 +50,8 @@ const bootstrap =
     redisClient,
     kafkaProducer,
     eventConsumer,
+    kafkaAdmin,
+    kafkaHealthChecker,
     PORT
   );
 

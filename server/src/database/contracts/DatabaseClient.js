@@ -16,6 +16,12 @@ export default class DatabaseClient
     {
         throw new Error("query() must be implemented")
     }
+
+    async healthCheck()
+    {
+        throw new Error("healthCheck() must be implemented")
+    }
+
     async disconnect()
     {
         throw new Error("disconnect() must be implemented")

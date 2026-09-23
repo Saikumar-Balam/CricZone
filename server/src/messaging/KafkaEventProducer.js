@@ -12,7 +12,7 @@ export default class KafkaEventProducer extends EventProducer
     async publish(topic, event)
     {
         try{
-            await this.kafkaProducer.send({topic,
+            return await this.kafkaProducer.send({topic,
                 messages: [{
                     key: event.aggregateId ? String(event.aggregateId) : undefined,
                     value: JSON.stringify(event)
@@ -35,3 +35,10 @@ export default class KafkaEventProducer extends EventProducer
 // For Redis caching we used fail-open behavior.
 
 // For Kafka publishing, we should not automatically swallow failures, because losing a live event may affect correctness.
+
+// SRP — KafkaEventProducer only adapts event publishing.
+// DIP — application code can depend on EventProducer.
+// DI — KafkaJS producer and logger are constructor-injected.
+// Adapter Pattern — Kafka-specific send() is hidden behind publish().
+// Fail Fast — publishing errors propagate to the caller.
+// Separation of Concerns — retry policy stays out of the event producer adapter.

@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { createTestKafka } from "../../helpers/testKafka.js";
+import { createTestKafka, createTestKafkaProducer } from "../../helpers/testKafka.js";
 import {createEvent} from "../../../src/messaging/EventFactory.js"
 
 describe("Kafka Publish Integration", () => {
     it("should publish BALL_RECORDED event", async () => {
         const kafka = createTestKafka()
-        const producer = kafka.producer()
+        const producer = createTestKafkaProducer(kafka)
         const event = createEvent({
             type: "BALL_RECORDED",
             aggregateId: "test:match-1001",
