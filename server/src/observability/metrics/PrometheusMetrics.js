@@ -78,7 +78,7 @@ export default class PrometheusMetrics extends Metrics
         if(!this.histograms.has(name))
         {
             const histogram = new Histogram({name,
-                help: `${name} gauge`,
+                help: `${name} histogram`,
                 labelNames: Object.keys(labels),
                 registers: [this.registry]
             })

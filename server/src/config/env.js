@@ -45,7 +45,7 @@ function validateProductionSecurity(env)
     // Redis / Valkey must use TLS
     if(!env.REDIS_URL.startsWith("rediss://"))
     {
-        throw new Error("Production REDIS_URL must use TLS (redis://)")
+        throw new Error("Production REDIS_URL must use TLS (rediss://)")
     }
     // Kafka Brokers must be configured
     const brokers = env.KAFKA_BROKERS.split(",").map((broker) => broker.trim()).filter(Boolean)

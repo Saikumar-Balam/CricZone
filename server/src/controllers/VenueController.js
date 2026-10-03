@@ -8,7 +8,6 @@ export default class venueController {
 
   async getVenues(req, res, next) {
     try {
-      const { venueId } = req.params;
       const venue = await this.venueService.getVenues();
       return res.status(200).json({
         success: true,

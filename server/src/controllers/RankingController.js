@@ -22,10 +22,10 @@ export default class RankingController {
   async getRankingsById(req, res, next) {
     try {
       const { rankingId } = req.params;
-      const rankings = await this.rankingService.getRankingsById(rankingId);
+      const ranking = await this.rankingService.getRankingsById(rankingId);
       return res.status(200).json({
         success: true,
-        data: rankings,
+        data: ranking,
       });
     } catch (error) {
       next(error);

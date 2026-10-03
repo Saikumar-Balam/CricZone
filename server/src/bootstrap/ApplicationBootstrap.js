@@ -36,7 +36,7 @@ export default class ApplicationBootstrap {
     this.kafkaHealthChecker = kafkaHealthChecker
     this.port = port;
     this.server = null;
-    this.redisUrl = null
+    this.redisUrl = redisUrl
     this.io = null
     this.webSocketGateway = null
     this.socketIOPubClient = null

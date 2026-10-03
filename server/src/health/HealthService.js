@@ -1,9 +1,10 @@
 export default class HealthService {
-    constructor(databaseClient, redisClient, kafkaProducer)
+
+    constructor(databaseClient, redisClient, kafkaHealthChecker)
     {
         this.databaseClient = databaseClient
         this.redisClient = redisClient
-        this.kafkaProducer = kafkaProducer
+        this.kafkaHealthChecker = kafkaHealthChecker
     }
 
     async checkReadiness()
@@ -13,39 +14,47 @@ export default class HealthService {
             redis: false,
             kafka: false
         }
-        try{
-           const databaseHealth =  await this.databaseClient.healthCheck()
+
+        // PostgreSQL readiness
+        try {
+            const databaseHealth =
+                await this.databaseClient.healthCheck()
+
             checks.database = databaseHealth.healthy
         }
-        catch{
-            checks.database = false 
+        catch {
+            checks.database = false
         }
 
+        // Redis / Valkey readiness
         try {
             await this.redisClient.ping()
-            checks.redis = true 
+            checks.redis = true
         }
         catch {
             checks.redis = false
         }
 
+        // Kafka readiness
         try {
-            checks.kafka = this.kafkaProducer != null
+            const kafkaHealth =
+                await this.kafkaHealthChecker.check()
+
+            checks.kafka = kafkaHealth.healthy
         }
-        catch 
-        {
+        catch {
             checks.kafka = false
         }
 
-        const ready = Object.values(checks).every(Boolean)
+        const ready =
+            Object.values(checks).every(Boolean)
 
         return {
-            ready, 
+            ready,
             checks
         }
     }
 }
-
 // SRP
 // HealthService is responsible only for checking
 // application dependency readiness.

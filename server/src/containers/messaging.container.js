@@ -1,4 +1,4 @@
-import LiveBallEventHandler from "../messaging/handlers/LiveBallEventHandler.js";
+
 import KafkaEventConsumer from "../messaging/KafkaEventConsumer.js";
 import KafkaEventProducer from "../messaging/KafkaEventProducer.js";
 import { kafkaConsumer, kafkaProducer } from "./kafka.container.js";

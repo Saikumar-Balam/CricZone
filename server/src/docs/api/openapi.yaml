@@ -1,0 +1,1028 @@
+openapi: 3.0.3
+
+info:
+  title: CricZone API
+  version: 1.0.0
+  description: |
+    REST API for CricZone cricket analytics.
+
+    The API provides access to matches, scorecards, teams, players,
+    series, venues, rankings, news, and cricket statistics.
+
+    Live incremental match updates are delivered separately through
+    Socket.IO and are documented in docs/events/websocket-events.md.
+
+servers:
+  - url: /api/v1
+    description: CricZone API v1
+
+# CricZone public browsing API.
+# No authentication is required in Phase 1.
+security: []
+tags:
+  - name: Matches
+  - name: Teams
+  - name: Players
+  - name: Series
+  - name: Venues
+  - name: Rankings
+  - name: News
+  - name: Statistics
+
+paths:
+
+  /matches:
+    get:
+      tags: [Matches]
+      summary: Get all matches
+      operationId: getMatches
+      responses:
+        "200":
+          description: Matches retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /matches/{matchId}:
+    get:
+      tags: [Matches]
+      summary: Get match by ID
+      operationId: getMatchById
+      parameters:
+        - $ref: "#/components/parameters/MatchId"
+      responses:
+        "200":
+          description: Match retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /matches/{matchId}/scorecard:
+    get:
+      tags: [Matches]
+      summary: Get scorecard for a match
+      operationId: getScorecardByMatchId
+      parameters:
+        - $ref: "#/components/parameters/MatchId"
+      responses:
+        "200":
+          description: Scorecard retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScorecardResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /teams:
+    get:
+      tags: [Teams]
+      summary: Get all teams
+      operationId: getTeams
+      responses:
+        "200":
+          description: Teams retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /teams/{teamId}:
+    get:
+      tags: [Teams]
+      summary: Get team by ID
+      operationId: getTeamById
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /teams/{teamId}/players:
+    get:
+      tags: [Teams]
+      summary: Get players belonging to a team
+      operationId: getPlayersByTeamId
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team players retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /teams/{teamId}/matches:
+    get:
+      tags: [Teams]
+      summary: Get matches for a team
+      operationId: getMatchesByTeamId
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team matches retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /teams/{teamId}/ranking:
+    get:
+      tags: [Teams]
+      summary: Get ranking for a team
+      operationId: getRankingByTeamId
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team ranking retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /players:
+    get:
+      tags: [Players]
+      summary: Get all players
+      operationId: getPlayers
+      responses:
+        "200":
+          description: Players retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /players/{playerId}:
+    get:
+      tags: [Players]
+      summary: Get player by ID
+      operationId: getPlayerById
+      parameters:
+        - $ref: "#/components/parameters/PlayerId"
+      responses:
+        "200":
+          description: Player retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /players/{playerId}/statistics:
+    get:
+      tags: [Players]
+      summary: Get player statistics
+      operationId: getSimplePlayerStatistics
+      parameters:
+        - $ref: "#/components/parameters/PlayerId"
+      responses:
+        "200":
+          description: Player statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /players/{playerId}/ranking:
+    get:
+      tags: [Players]
+      summary: Get ranking for a player
+      operationId: getRankingByPlayerId
+      parameters:
+        - $ref: "#/components/parameters/PlayerId"
+      responses:
+        "200":
+          description: Player ranking retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /players/{playerId}/news:
+    get:
+      tags: [Players]
+      summary: Get news related to a player
+      operationId: getPlayerNews
+      parameters:
+        - $ref: "#/components/parameters/PlayerId"
+      responses:
+        "200":
+          description: Player news retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /series:
+    get:
+      tags: [Series]
+      summary: Get all series
+      operationId: getSeries
+      responses:
+        "200":
+          description: Series retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeriesListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /series/{seriesId}:
+    get:
+      tags: [Series]
+      summary: Get series by ID
+      operationId: getSeriesById
+      parameters:
+        - $ref: "#/components/parameters/SeriesId"
+      responses:
+        "200":
+          description: Series retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeriesResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /series/{seriesId}/matches:
+    get:
+      tags: [Series]
+      summary: Get matches belonging to a series
+      operationId: getMatchesBySeriesId
+      parameters:
+        - $ref: "#/components/parameters/SeriesId"
+      responses:
+        "200":
+          description: Series matches retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /venues:
+    get:
+      tags: [Venues]
+      summary: Get all venues
+      operationId: getVenues
+      responses:
+        "200":
+          description: Venues retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VenueListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /venues/{venueId}:
+    get:
+      tags: [Venues]
+      summary: Get venue by ID
+      operationId: getVenueById
+      parameters:
+        - $ref: "#/components/parameters/VenueId"
+      responses:
+        "200":
+          description: Venue retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VenueResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /venues/{venueId}/matches:
+    get:
+      tags: [Venues]
+      summary: Get matches played at a venue
+      operationId: getMatchesByVenueId
+      parameters:
+        - $ref: "#/components/parameters/VenueId"
+      responses:
+        "200":
+          description: Venue matches retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /rankings:
+    get:
+      tags: [Rankings]
+      summary: Get all rankings
+      operationId: getRankings
+      responses:
+        "200":
+          description: Rankings retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /rankings/players:
+    get:
+      tags: [Rankings]
+      summary: Get player rankings
+      operationId: getPlayerRankings
+      responses:
+        "200":
+          description: Player rankings retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /rankings/teams:
+    get:
+      tags: [Rankings]
+      summary: Get team rankings
+      operationId: getTeamRankings
+      responses:
+        "200":
+          description: Team rankings retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /rankings/{rankingId}:
+    get:
+      tags: [Rankings]
+      summary: Get ranking by ID
+      operationId: getRankingById
+      parameters:
+        - $ref: "#/components/parameters/RankingId"
+      responses:
+        "200":
+          description: Ranking retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /news:
+    get:
+      tags: [News]
+      summary: Get all news
+      operationId: getNews
+      responses:
+        "200":
+          description: News retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /news/player/{playerId}:
+    get:
+      tags: [News]
+      summary: Get news related to a player
+      operationId: getNewsByPlayerId
+      parameters:
+        - $ref: "#/components/parameters/PlayerId"
+      responses:
+        "200":
+          description: Player news retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /news/team/{teamId}:
+    get:
+      tags: [News]
+      summary: Get news related to a team
+      operationId: getNewsByTeamId
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team news retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /news/series/{seriesId}:
+    get:
+      tags: [News]
+      summary: Get news related to a series
+      operationId: getNewsBySeriesId
+      parameters:
+        - $ref: "#/components/parameters/SeriesId"
+      responses:
+        "200":
+          description: Series news retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /news/match/{matchId}:
+    get:
+      tags: [News]
+      summary: Get news related to a match
+      operationId: getNewsByMatchId
+      parameters:
+        - $ref: "#/components/parameters/MatchId"
+      responses:
+        "200":
+          description: Match news retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsListResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /news/{newsId}:
+    get:
+      tags: [News]
+      summary: Get news article by ID
+      operationId: getNewsById
+      parameters:
+        - $ref: "#/components/parameters/NewsId"
+      responses:
+        "200":
+          description: News article retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /statistics/players/{playerId}:
+    get:
+      tags: [Statistics]
+      summary: Get detailed player statistics
+      operationId: getPlayerStatistics
+      parameters:
+        - $ref: "#/components/parameters/PlayerId"
+      responses:
+        "200":
+          description: Player statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerStatisticsResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /statistics/teams/{teamId}:
+    get:
+      tags: [Statistics]
+      summary: Get detailed team statistics
+      operationId: getTeamStatistics
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamStatisticsResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /statistics/series/{seriesId}:
+    get:
+      tags: [Statistics]
+      summary: Get series statistics
+      operationId: getSeriesStatistics
+      parameters:
+        - $ref: "#/components/parameters/SeriesId"
+      responses:
+        "200":
+          description: Series statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeriesStatisticsResponse"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+components:
+
+  parameters:
+
+    MatchId:
+      name: matchId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Match identifier
+
+    TeamId:
+      name: teamId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Team identifier
+
+    PlayerId:
+      name: playerId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Player identifier
+
+    SeriesId:
+      name: seriesId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Series identifier
+
+    VenueId:
+      name: venueId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Venue identifier
+
+    RankingId:
+      name: rankingId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Ranking identifier
+
+    NewsId:
+      name: newsId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: News identifier
+
+  responses:
+
+    ErrorResponse:
+      description: Request failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: RESOURCE_NOT_FOUND
+            message:
+              type: string
+              example: Resource was not found
+            requestId:
+              type: string
+              nullable: true
+
+    DataResponse:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          description: Endpoint-specific response data
+
+    Match:
+      type: object
+      properties:
+        id:
+          type: integer
+        format:
+          type: string
+        status:
+          type: string
+        start_time:
+          type: string
+          format: date-time
+        result:
+          type: string
+          nullable: true
+        series_id:
+          type: integer
+        series_name:
+          type: string
+        venue_id:
+          type: integer
+        venue_name:
+          type: string
+        venue_city:
+          type: string
+        team1_id:
+          type: integer
+        team1_name:
+          type: string
+        team1_short_name:
+          type: string
+        team2_id:
+          type: integer
+        team2_name:
+          type: string
+        team2_short_name:
+          type: string
+
+    MatchResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: "#/components/schemas/Match"
+
+    MatchListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Match"
+
+    Team:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        short_name:
+          type: string
+        country:
+          type: string
+        logo_url:
+          type: string
+          nullable: true
+
+    TeamResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: "#/components/schemas/Team"
+
+    TeamListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Team"
+
+    Player:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        country:
+          type: string
+        role:
+          type: string
+        batting_style:
+          type: string
+          nullable: true
+        bowling_style:
+          type: string
+          nullable: true
+        image_url:
+          type: string
+          nullable: true
+        team_id:
+          type: integer
+          nullable: true
+        team_name:
+          type: string
+          nullable: true
+        team_short_name:
+          type: string
+          nullable: true
+        teams:
+          type: array
+          items:
+            $ref: "#/components/schemas/Team"
+
+    PlayerResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: "#/components/schemas/Player"
+
+    PlayerListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Player"
+
+    Series:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        format:
+          type: string
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SeriesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: "#/components/schemas/Series"
+
+    SeriesListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Series"
+
+    Venue:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        city:
+          type: string
+        country:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    VenueResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: "#/components/schemas/Venue"
+
+    VenueListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Venue"
+
+    News:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        content:
+          type: string
+        image_url:
+          type: string
+          nullable: true
+        published_at:
+          type: string
+          format: date-time
+
+    NewsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: "#/components/schemas/News"
+
+    NewsListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/News"
+
+    Scorecard:
+      type: object
+      properties:
+        id:
+          type: integer
+        matchId:
+          type: integer
+        innings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Innings"
+
+    Innings:
+      type: object
+      additionalProperties: true
+      properties:
+        batting_performances:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        bowling_performances:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    ScorecardResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: "#/components/schemas/Scorecard"
+
+    PlayerStatistics:
+      type: object
+      properties:
+        formatStatistics:
+          description: Statistics grouped by match format
+        competitionStatistics:
+          description: Statistics grouped by competition
+
+    PlayerStatisticsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: "#/components/schemas/PlayerStatistics"
+
+    TeamStatistics:
+      type: object
+      properties:
+        formatStatistics:
+          description: Team statistics grouped by match format
+        competitionStatistics:
+          description: Team statistics grouped by competition
+
+    TeamStatisticsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: "#/components/schemas/TeamStatistics"
+
+    SeriesStatistics:
+      type: object
+      properties:
+        seriesId:
+          type: integer
+        seriesName:
+          type: string
+        totalMatches:
+          type: integer
+        completedMatches:
+          type: integer
+        liveMatches:
+          type: integer
+        totalRuns:
+          type: integer
+        totalWickets:
+          type: integer
+
+    SeriesStatisticsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: "#/components/schemas/SeriesStatistics"
