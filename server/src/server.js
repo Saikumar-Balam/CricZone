@@ -30,7 +30,7 @@ import { redisClient } from "./containers/redis.container.js";
 import { kafkaAdmin, kafkaHealthChecker, kafkaProducer } from "./containers/kafka.container.js";
 import { eventConsumer} from "./containers/messaging.container.js";
 
-const {port: PORT} = validateEnvironment()
+const {port: PORT, redisUrl} = validateEnvironment()
 
 const app = createApp(
   apiRouter,

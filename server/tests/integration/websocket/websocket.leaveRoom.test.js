@@ -50,7 +50,7 @@ describe("WebSocket Leave Room Integration", () => {
                     reject(error)
                 })
             })
-            const matchId = 1001
+            const matchId = "1001"
             const room = `match:${matchId}`
             // 1st join the romm
             client.emit("join-match", matchId)

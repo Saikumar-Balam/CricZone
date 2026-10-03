@@ -1,260 +1,259 @@
 import { describe, it, expect } from "vitest";
+import { randomUUID } from "node:crypto";
 
-import { createTestKafka, createTestKafkaProducer } from "../../helpers/testKafka.js";
+import {
+    createTestKafka,
+    createTestKafkaProducer
+} from "../../helpers/testKafka.js";
 
-import { createEvent } from "../../../src/messaging/EventFactory.js";
+import {
+    createEvent
+} from "../../../src/messaging/EventFactory.js";
+
 
 describe("Kafka Consumer Receive Integration", () => {
 
-    it("should receive published BALL_RECORDED event", async () => {
+    it(
+        "should receive published BALL_RECORDED event",
+        async () => {
 
-        const kafka = createTestKafka();
+            const testId = randomUUID();
 
-        const producer = createTestKafkaProducer(kafka)
+            const kafka = createTestKafka();
 
-        const consumer = kafka.consumer({
-            groupId: `criczone-test-consumer-${Date.now()}`
-        });
+            const producer =
+                createTestKafkaProducer(kafka);
 
-        const event = createEvent({
-            type: "BALL_RECORDED",
-
-            aggregateId: "test-match-1002",
-
-            payload: {
-                matchId: 1002,
-                inningsId: 2002,
-                playerId: 3002,
-                runs: 6,
-
-                wicket: {
-                    occurred: false
-                }
-            },
-
-            requestId: "test-request-002",
-            traceId: "test-trace-002"
-        });
-
-        let timeout;
-
-        let resolveMessage;
-        let rejectMessage;
-
-        try {
-
-            await producer.connect();
-
-            await consumer.connect();
-
-            await consumer.subscribe({
-                topic: process.env.TEST_KAFKA_TOPIC,
-                fromBeginning: false
+            const consumer = kafka.consumer({
+                groupId:
+                    `criczone-test-consumer-${testId}`
             });
 
-            /*
-             * Register GROUP_JOIN before consumer.run()
-             * so consumer readiness cannot be missed.
-             */
-            const consumerReady = new Promise((resolve) => {
+            const event = createEvent({
+                type: "BALL_RECORDED",
 
-                consumer.on(
-                    consumer.events.GROUP_JOIN,
-                    resolve
-                );
+                aggregateId:
+                    `test-match-${testId}`,
 
+                payload: {
+                    matchId:
+                        `match-${testId}`,
+
+                    inningsId:
+                        `innings-${testId}`,
+
+                    playerId:
+                        `player-${testId}`,
+
+                    runs: 6,
+
+                    wicket: {
+                        occurred: false
+                    }
+                },
+
+                requestId:
+                    `test-request-${testId}`,
+
+                traceId:
+                    `test-trace-${testId}`
             });
 
-            /*
-             * Promise representing receipt of this test's
-             * exact Kafka event.
-             */
-            const messageReceived = new Promise((resolve, reject) => {
+            let timeout = null;
 
-                resolveMessage = resolve;
-                rejectMessage = reject;
+            try {
 
-            });
+                await producer.connect();
+                await consumer.connect();
 
-            /*
-             * Start Kafka message processing.
-             *
-             * Do not await consumer.run() because it remains
-             * active until the consumer is stopped/disconnected.
-             */
-            consumer.run({
-
-                eachMessage: async ({
-                    topic,
-                    partition,
-                    message
-                }) => {
-
-                    const parsedEvent =
-                        JSON.parse(message.value.toString());
+                await consumer.subscribe({
+                    topic:
+                        process.env.TEST_KAFKA_TOPIC,
 
                     /*
-                     * Temporary diagnostic logging.
-                     *
-                     * This tells us whether the consumer is
-                     * receiving:
-                     *
-                     * 1. our expected event,
-                     * 2. unrelated events,
-                     * 3. or no events at all.
+                     * Unique consumer group +
+                     * unique eventId makes old
+                     * records safe to consume.
                      */
-                    console.log(
-                        "Kafka test consumed event:",
-                        {
-                            expectedEventId:
-                                event.eventId,
+                    fromBeginning: true
+                });
 
-                            receivedEventId:
-                                parsedEvent.eventId,
 
-                            topic,
+                let resolveMessage;
+                let rejectMessage;
 
-                            partition,
+                const messageReceived =
+                    new Promise(
+                        (resolve, reject) => {
 
-                            offset:
-                                message.offset
+                            resolveMessage = resolve;
+                            rejectMessage = reject;
+
                         }
                     );
 
-                    /*
-                     * Multiple Kafka integration tests use
-                     * the same test topic.
-                     *
-                     * Ignore events that do not belong
-                     * to this test.
-                     */
-                    if (
-                        parsedEvent.eventId !==
-                        event.eventId
-                    ) {
-                        return;
+
+                /*
+                 * Register readiness listener
+                 * BEFORE consumer.run().
+                 */
+                const consumerReady =
+                    new Promise((resolve) => {
+
+                        consumer.on(
+                            consumer.events.GROUP_JOIN,
+                            resolve
+                        );
+
+                    });
+
+
+                /*
+                 * Start Kafka consumer loop.
+                 */
+                const runPromise =
+                    consumer.run({
+
+                        eachMessage: async ({
+                            topic,
+                            partition,
+                            message
+                        }) => {
+
+                            const parsedEvent =
+                                JSON.parse(
+                                    message.value.toString()
+                                );
+
+                            /*
+                             * Shared test topic can
+                             * contain records from
+                             * previous tests.
+                             */
+                            if (
+                                parsedEvent.eventId !==
+                                event.eventId
+                            ) {
+                                return;
+                            }
+
+                            console.log(
+                                "Kafka exact test event received:",
+                                {
+                                    eventId:
+                                        parsedEvent.eventId,
+
+                                    topic,
+
+                                    partition,
+
+                                    offset:
+                                        message.offset
+                                }
+                            );
+
+                            if (timeout) {
+                                clearTimeout(timeout);
+                            }
+
+                            resolveMessage(
+                                parsedEvent
+                            );
+                        }
+                    });
+
+
+                /*
+                 * Wait for partition assignment.
+                 */
+                await consumerReady;
+
+
+                /*
+                 * Start delivery timeout after
+                 * consumer group readiness.
+                 */
+                timeout = setTimeout(() => {
+
+                    rejectMessage(
+                        new Error(
+                            "Kafka consumer did not receive exact test event within 20 seconds"
+                        )
+                    );
+
+                }, 20000);
+
+
+                const sendResult =
+                    await producer.send({
+
+                        topic:
+                            process.env.TEST_KAFKA_TOPIC,
+
+                        messages: [
+                            {
+                                key:
+                                    event.aggregateId,
+
+                                value:
+                                    JSON.stringify(
+                                        event
+                                    )
+                            }
+                        ]
+                    });
+
+
+                console.log(
+                    "Kafka exact test event produced:",
+                    {
+                        eventId:
+                            event.eventId,
+
+                        sendResult
                     }
-
-                    if (timeout) {
-                        clearTimeout(timeout);
-                    }
-
-                    resolveMessage(parsedEvent);
-
-                }
-
-            });
-
-            /*
-             * Wait until Kafka has assigned the consumer
-             * its partition before publishing.
-             */
-            await consumerReady;
-
-            console.log(
-                "Kafka consumer ready:",
-                {
-                    expectedEventId:
-                        event.eventId,
-
-                    topic:
-                        process.env.TEST_KAFKA_TOPIC
-                }
-            );
-
-            /*
-             * Start timeout only AFTER consumer readiness.
-             *
-             * Therefore this measures Kafka message delivery,
-             * not consumer startup.
-             */
-            timeout = setTimeout(() => {
-
-                rejectMessage(
-                    new Error(
-                        "Kafka consumer did not receive event within 20 seconds after consumer readiness"
-                    )
                 );
 
-            }, 20000);
 
-            /*
-             * Publish the event and capture Kafka's
-             * acknowledgement metadata.
-             */
-            const sendResult = await producer.send({
+                const receivedEvent =
+                    await messageReceived;
 
-                topic:
-                    process.env.TEST_KAFKA_TOPIC,
 
-                messages: [
-                    {
-                        key:
-                            event.aggregateId,
+                expect(receivedEvent)
+                    .toBeDefined();
 
-                        value:
-                            JSON.stringify(event)
-                    }
-                ]
+                expect(receivedEvent.eventId)
+                    .toBe(event.eventId);
 
-            });
+                expect(receivedEvent.type)
+                    .toBe("BALL_RECORDED");
 
-            /*
-             * Temporary producer diagnostic.
-             *
-             * sendResult should tell us the partition
-             * and offset assigned by Kafka.
-             */
-            console.log(
-                "Kafka test produced event:",
-                {
-                    eventId:
-                        event.eventId,
+                expect(receivedEvent.aggregateId)
+                    .toBe(event.aggregateId);
 
-                    aggregateId:
-                        event.aggregateId,
 
-                    sendResult
+                /*
+                 * consumer.run() intentionally
+                 * remains active until disconnect.
+                 */
+                void runPromise;
+
+            }
+            finally {
+
+                if (timeout) {
+                    clearTimeout(timeout);
                 }
-            );
 
-            /*
-             * Wait for the exact event produced above.
-             */
-            const receivedEvent =
-                await messageReceived;
-
-            expect(receivedEvent)
-                .toBeDefined();
-
-            expect(receivedEvent.eventId)
-                .toBe(event.eventId);
-
-            expect(receivedEvent.type)
-                .toBe("BALL_RECORDED");
-
-        }
-        finally {
-
-            /*
-             * Ensure the timeout cannot remain alive
-             * after the test completes or fails.
-             */
-            if (timeout) {
-                clearTimeout(timeout);
+                await Promise.allSettled([
+                    consumer.disconnect(),
+                    producer.disconnect()
+                ]);
             }
 
-            /*
-             * Stop long-running consumer first,
-             * then disconnect producer.
-             */
-            await consumer.disconnect();
-
-            await producer.disconnect();
-
-        }
-
-    }, 45000);
+        },
+        45000
+    );
 
 });
 

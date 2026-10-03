@@ -25,6 +25,7 @@ export default class ApplicationBootstrap {
     kafkaAdmin,
     kafkaHealthChecker,
     port,
+    redisUrl
   ) {
     this.app = app;
     this.databaseClient = databaseClient;
@@ -35,6 +36,11 @@ export default class ApplicationBootstrap {
     this.kafkaHealthChecker = kafkaHealthChecker
     this.port = port;
     this.server = null;
+    this.redisUrl = null
+    this.io = null
+    this.webSocketGateway = null
+    this.socketIOPubClient = null
+    this.socketIOSubClient = null
   }
   registerShutdownHandlers()
   {
@@ -82,9 +88,11 @@ export default class ApplicationBootstrap {
     this.server = http.createServer(this.app);
 
     // create websocket infrastructure
-    const { io, webSocketGateway } = createWebSocketInfrastructure(this.server);
+    const { io, webSocketGateway, pubClient, subClient } = await createWebSocketInfrastructure(this.server, this.redisUrl);
     this.io = io;
     this.webSocketGateway = webSocketGateway;
+    this.socketIOPubClient = pubClient
+    this.socketIOSubClient = subClient
 
     const scorecardRepository = new PostgresScorecardRepository(this.databaseClient)
     const liveCache = new  RedisLiveCache(this.redisClient)
@@ -141,6 +149,33 @@ export default class ApplicationBootstrap {
       errors.push({resource: "HTTP Server", error})
       console.log("1. HTTP server close FAILED")
     }
+    }
+    console.log("Closing Socket.Io Redis adapter clients...")
+    const socketIOAdapterClients = [
+      {
+        name: "Socket.IO Redis subscriber",
+        client: this.socketIOSubClient
+      },
+      {
+        name: "Socket.IO Redis publisher",
+        client: this.socketIOPubClient
+      }
+    ]
+    for(const {name, client} of socketIOAdapterClients)
+    {
+      if(!client?.isOpen)
+      {
+        continue 
+      }
+      try {
+        await withTimeout(client.quit(), 10000, `${name} disconnect`)
+        console.log(`${name} connection closed`)
+      }
+      catch(error)
+      {
+        errors.push({resource: name.error, error})
+        console.error(`${name} connection close failed:`, error.message)
+      }
     }
 
     // close Kafka consumer connection
@@ -259,3 +294,10 @@ export default class ApplicationBootstrap {
 // SRP — bootstrap remains responsible for application lifecycle.
 // Error Aggregation — cleanup errors are collected and reported after cleanup attempts.
 // Dependency Ordering — Kafka processing infrastructure is stopped before Redis/PostgreSQL.
+
+// Lifecycle Management — adapter connections are explicitly opened and closed.
+// Resource Safety — Pub/Sub connections aren't abandoned during shutdown.
+// SRP — ApplicationBootstrap owns lifecycle coordination.
+// DI — bootstrap operates on injected/created resource references rather than recreating them.
+// Failure Isolation — failure closing one client doesn't prevent other resources from being cleaned up.
+// Dependency Ordering — Socket.IO is stopped before the infrastructure used by its distributed adapter.

@@ -86,7 +86,8 @@ export function validateEnvironment(env = process.env)
     }
     return {
         nodeEnv, 
-        port: Number(env.PORT || 5000)
+        port: Number(env.PORT || 5000),
+        redisUrl: nodeEnv === "test" ? env.TEST_REDIS_URL : env.REDIS_URL
     }
 }
 

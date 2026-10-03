@@ -49,7 +49,7 @@ describe("WebSocket Join Room Integration", () => {
                 })
 
             })
-            const matchId = 1001
+            const matchId = "1001"
             const room = `match:${matchId}`
             client.emit("join-match", matchId)
             await new Promise(resolve =>

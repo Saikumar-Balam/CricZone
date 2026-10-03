@@ -1,3 +1,5 @@
+import WebSocketRooms from "../websocket/WebSocketRooms.js"
+
 export default class LiveUpdateService {
     constructor(scorecardRepository, cache, webSocketGateway, logger, metrics) {
         this.scorecardRepository = scorecardRepository
@@ -120,7 +122,7 @@ export default class LiveUpdateService {
         }
 
         // websocket
-        const room = `match:${event.payload.matchId}`
+        const room = WebSocketRooms.match(event.payload.matchId)
         try{
         this.webSocketGateway.emitToRoom(room, 'BALL_RECORDED', liveState)
 
@@ -172,3 +174,10 @@ export default class LiveUpdateService {
 
 // Testability
 // Mock repository/cache/WebSocket/logger can be injected.
+
+// DRY — one definition for match:<id>.
+// SRP — WebSocketRooms owns room naming.
+// DIP — LiveUpdateService still depends on WebSocketGateway.
+// DI — gateway, repository, cache, logger and metrics remain injected.
+// OCP — room naming can evolve without changing multiple components.
+// Pub/Sub Pattern — updates are delivered only to clients subscribed to the relevant match room.

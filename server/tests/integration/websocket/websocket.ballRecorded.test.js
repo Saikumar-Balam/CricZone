@@ -95,7 +95,7 @@ describe("WebSocket BALL_RECORDED Delivery Integration", () => {
                 )
             })
 
-            const matchId = 1001
+            const matchId = "1001"
             const room = `match:${matchId}`
 
             client.emit(

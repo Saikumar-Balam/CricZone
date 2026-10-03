@@ -108,6 +108,122 @@ describe("SocketIOGateway", () => {
             errorMessage: "Room emission failed"
         }))
     })
+    it(
+    "should record, log and propagate room emission failure",
+    () => {
+
+        const emissionError =
+            new Error("Socket.IO room emission failed")
+
+        const emit = vi.fn(() => {
+            throw emissionError
+        })
+
+        io.to.mockReturnValue({
+            emit
+        })
+
+        expect(() =>
+            gateway.emitToRoom(
+                "match:1001",
+                "BALL_RECORDED",
+                {
+                    matchId: "1001"
+                }
+            )
+        ).toThrow(
+            "Socket.IO room emission failed"
+        )
+
+        expect(io.to).toHaveBeenCalledWith(
+            "match:1001"
+        )
+
+        expect(emit).toHaveBeenCalledWith(
+            "BALL_RECORDED",
+            {
+                matchId: "1001"
+            }
+        )
+
+        expect(
+            metrics.incrementCounter
+        ).toHaveBeenCalledWith(
+            "websocket_emit_failures_total",
+            1,
+            {
+                scope: "room",
+                event_type: "BALL_RECORDED"
+            }
+        )
+
+        expect(
+            logger.error
+        ).toHaveBeenCalledWith(
+            "WebSocket room emission failed",
+            {
+                room: "match:1001",
+                event: "BALL_RECORDED",
+                errorMessage:
+                    "Socket.IO room emission failed"
+            }
+        )
+    }
+)
+it(
+    "should record, log and propagate broadcast emission failure",
+    () => {
+
+        const emissionError =
+            new Error("Socket.IO broadcast failed")
+
+        io.emit.mockImplementation(() => {
+            throw emissionError
+        })
+
+        const payload = {
+            matchId: "1001"
+        }
+
+        expect(() =>
+            gateway.broadcast(
+                "MATCH_UPDATED",
+                payload
+            )
+        ).toThrow(
+            "Socket.IO broadcast failed"
+        )
+
+        expect(
+            io.emit
+        ).toHaveBeenCalledWith(
+            "MATCH_UPDATED",
+            payload
+        )
+
+        expect(
+            metrics.incrementCounter
+        ).toHaveBeenCalledWith(
+            "websocket_emit_failures_total",
+            1,
+            {
+                scope: "broadcast",
+                event_type: "MATCH_UPDATED"
+            }
+        )
+
+        expect(
+            logger.error
+        ).toHaveBeenCalledWith(
+            "WebSocket broadcast failed",
+            {
+                event: "MATCH_UPDATED",
+                errorMessage:
+                    "Socket.IO broadcast failed"
+            }
+        )
+    }
+)
 })
 
 // SRP
@@ -132,3 +248,17 @@ describe("SocketIOGateway", () => {
 //
 // Testability
 // All collaborators can be replaced by mocks.
+
+// SRP — SocketIOGateway owns WebSocket emission behavior.
+// DIP — Socket.IO, logger, and metrics are injected dependencies.
+// Fail Fast — the gateway rethrows emission failures.
+// Observability — failures produce a metric and structured log.
+// Test Isolation — failure is simulated without real Socket.IO/Valkey infrastructure.
+// Repository/Test Organization — extend the existing gateway unit suite instead of creating overlapping tests.
+
+// SRP — SocketIOGateway encapsulates WebSocket emission behavior.
+// DIP — Socket.IO, metrics, and logger remain injected dependencies.
+// Fail Fast — broadcast failures propagate rather than being swallowed.
+// Observability — broadcast failures generate structured logs and metrics.
+// Test Isolation — no real Socket.IO server or Valkey instance is required.
+// Interface Consistency — both gateway emission operations follow the same failure contract.

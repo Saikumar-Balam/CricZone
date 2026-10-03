@@ -175,7 +175,7 @@ describe("Kafka Handler Invocation Integration", () => {
                         process.env.TEST_KAFKA_TOPIC,
 
                     fromBeginning:
-                        false
+                        true
                 })
 
 

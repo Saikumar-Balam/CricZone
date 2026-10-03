@@ -1,187 +1,275 @@
 import { describe, it, expect } from "vitest";
+import { randomUUID } from "node:crypto";
 
-import { createTestKafka, createTestKafkaProducer } from "../../helpers/testKafka.js";
+import {
+    createTestKafka,
+    createTestKafkaProducer
+} from "../../helpers/testKafka.js";
 
-import { createEvent } from "../../../src/messaging/EventFactory.js";
+import {
+    createEvent
+} from "../../../src/messaging/EventFactory.js";
+
 
 describe("Kafka Serialization Integration", () => {
 
-    it("should serialize and deserialize BALL_RECORDED event correctly", async () => {
+    it(
+        "should serialize and deserialize BALL_RECORDED event correctly",
+        async () => {
 
-        const kafka = createTestKafka();
+            const testId = randomUUID();
 
-        const producer = createTestKafkaProducer(kafka)
+            const kafka =
+                createTestKafka();
 
-        const consumer = kafka.consumer({
-            groupId: `criczone-test-serialization-${Date.now()}`
-        });
+            const producer =
+                createTestKafkaProducer(kafka);
 
-        const event = createEvent({
-            type: "BALL_RECORDED",
+            const consumer =
+                kafka.consumer({
+                    groupId:
+                        `criczone-test-serialization-${testId}`
+                });
 
-            aggregateId: "test-match-1004",
 
-            payload: {
-                matchId: 1004,
-                inningsId: 2004,
-                playerId: 3004,
-                runs: 2,
+            const event =
+                createEvent({
 
-                wicket: {
-                    occurred: false
-                }
-            },
+                    type:
+                        "BALL_RECORDED",
 
-            requestId: "test-request-004",
-            traceId: "test-trace-004"
-        });
+                    aggregateId:
+                        `test-match-${testId}`,
 
-        try {
+                    payload: {
 
-            await producer.connect();
+                        matchId:
+                            `match-${testId}`,
 
-            await consumer.connect();
+                        inningsId:
+                            `innings-${testId}`,
 
-            await consumer.subscribe({
-                topic: process.env.TEST_KAFKA_TOPIC,
-                fromBeginning: false
-            });
+                        playerId:
+                            `player-${testId}`,
 
-            /**
-             * Register GROUP_JOIN before consumer.run()
-             * so consumer readiness cannot be missed.
-             */
-            const consumerReady = new Promise((resolve) => {
+                        runs: 2,
 
-                consumer.on(
-                    consumer.events.GROUP_JOIN,
-                    resolve
-                );
+                        wicket: {
+                            occurred: false
+                        }
+                    },
 
-            });
+                    requestId:
+                        `test-request-${testId}`,
 
-            /**
-             * Resolve the exact deserialized event directly
-             * from the Kafka message handler.
-             */
+                    traceId:
+                        `test-trace-${testId}`
+                });
+
+
+            let timeout = null;
+
             let resolveMessage;
             let rejectMessage;
 
-            const messageReceived = new Promise((resolve, reject) => {
 
-                resolveMessage = resolve;
-                rejectMessage = reject;
+            const messageReceived =
+                new Promise(
+                    (resolve, reject) => {
 
-            });
+                        resolveMessage =
+                            resolve;
 
-            /**
-             * Finite failure boundary for external Kafka
-             * infrastructure.
-             */
-            const timeout = setTimeout(() => {
-
-                rejectMessage(
-                    new Error(
-                        "Serialized Kafka event was not received"
-                    )
+                        rejectMessage =
+                            reject;
+                    }
                 );
 
-            }, 20000);
 
-            /**
-             * Start Kafka message processing.
-             */
-            consumer.run({
+            try {
 
-                eachMessage: async ({ message }) => {
+                await producer.connect();
 
-                    const eventString =
-                        message.value.toString();
+                await consumer.connect();
 
-                    const parsedEvent =
-                        JSON.parse(eventString);
 
-                    /**
-                     * Other integration tests use the same topic.
-                     * Ignore every event except this test's event.
+                await consumer.subscribe({
+
+                    topic:
+                        process.env.TEST_KAFKA_TOPIC,
+
+                    /*
+                     * Shared integration-test topic.
+                     *
+                     * Historical events are safe because
+                     * this test accepts only its unique
+                     * eventId.
                      */
-                    if (parsedEvent.eventId !== event.eventId) {
-                        return;
-                    }
+                    fromBeginning: true
+                });
 
+
+                /*
+                 * Register readiness listener before
+                 * starting consumer.run().
+                 */
+                const consumerReady =
+                    new Promise(resolve => {
+
+                        consumer.on(
+                            consumer.events.GROUP_JOIN,
+                            resolve
+                        );
+                    });
+
+
+                const runPromise =
+                    consumer.run({
+
+                        eachMessage:
+                            async ({ message }) => {
+
+                                const eventString =
+                                    message.value.toString();
+
+                                const parsedEvent =
+                                    JSON.parse(
+                                        eventString
+                                    );
+
+
+                                if (
+                                    parsedEvent.eventId !==
+                                    event.eventId
+                                ) {
+                                    return;
+                                }
+
+
+                                if (timeout) {
+                                    clearTimeout(
+                                        timeout
+                                    );
+                                }
+
+
+                                resolveMessage(
+                                    parsedEvent
+                                );
+                            }
+                    });
+
+
+                /*
+                 * Consumer must first receive
+                 * its partition assignment.
+                 */
+                await consumerReady;
+
+
+                /*
+                 * IMPORTANT:
+                 *
+                 * Timeout starts AFTER readiness.
+                 * Consumer startup time therefore
+                 * does not count as delivery time.
+                 */
+                timeout =
+                    setTimeout(() => {
+
+                        rejectMessage(
+                            new Error(
+                                "Serialized Kafka event was not received within 20 seconds after consumer readiness"
+                            )
+                        );
+
+                    }, 20000);
+
+
+                const serializedEvent =
+                    JSON.stringify(event);
+
+
+                await producer.send({
+
+                    topic:
+                        process.env.TEST_KAFKA_TOPIC,
+
+                    messages: [
+                        {
+                            key:
+                                event.aggregateId,
+
+                            value:
+                                serializedEvent
+                        }
+                    ]
+                });
+
+
+                const deserializedEvent =
+                    await messageReceived;
+
+
+                expect(deserializedEvent)
+                    .toBeDefined();
+
+                expect(deserializedEvent)
+                    .toEqual(event);
+
+                expect(deserializedEvent.payload)
+                    .toEqual(event.payload);
+
+                expect(deserializedEvent.eventId)
+                    .toBe(event.eventId);
+
+                expect(deserializedEvent.type)
+                    .toBe("BALL_RECORDED");
+
+                expect(deserializedEvent.aggregateId)
+                    .toBe(event.aggregateId);
+
+                expect(deserializedEvent.requestId)
+                    .toBe(event.requestId);
+
+                expect(deserializedEvent.traceId)
+                    .toBe(event.traceId);
+
+                expect(deserializedEvent.timestamp)
+                    .toBe(event.timestamp);
+
+
+                void runPromise;
+
+            }
+            finally {
+
+                if (timeout) {
                     clearTimeout(timeout);
-
-                    resolveMessage(parsedEvent);
                 }
 
-            });
 
-            /**
-             * Wait until Kafka assigns the consumer
-             * its partition before publishing.
-             */
-            await consumerReady;
+                await Promise.allSettled([
+                    consumer.disconnect(),
+                    producer.disconnect()
+                ]);
+            }
 
-            const serializedEvent =
-                JSON.stringify(event);
-
-            await producer.send({
-
-                topic: process.env.TEST_KAFKA_TOPIC,
-
-                messages: [
-                    {
-                        key: event.aggregateId,
-                        value: serializedEvent
-                    }
-                ]
-
-            });
-
-            /**
-             * Receive the actual deserialized event through
-             * the promise rather than shared mutable state.
-             */
-            const deserializedEvent =
-                await messageReceived;
-
-            expect(deserializedEvent).toBeDefined();
-
-            expect(deserializedEvent).toEqual(event);
-
-            expect(deserializedEvent.payload)
-                .toEqual(event.payload);
-
-            expect(deserializedEvent.eventId)
-                .toBe(event.eventId);
-
-            expect(deserializedEvent.type)
-                .toBe("BALL_RECORDED");
-
-            expect(deserializedEvent.aggregateId)
-                .toBe(event.aggregateId);
-
-            expect(deserializedEvent.requestId)
-                .toBe(event.requestId);
-
-            expect(deserializedEvent.traceId)
-                .toBe(event.traceId);
-
-            expect(deserializedEvent.timestamp)
-                .toBe(event.timestamp);
-
-        }
-        finally {
-
-            await producer.disconnect();
-
-            await consumer.disconnect();
-
-        }
-
-    }, 45000);
+        },
+        45000
+    );
 
 });
+
+
+// SRP — Test verifies Kafka serialization/deserialization only.
+// Factory Pattern — createTestKafka() owns Kafka client construction.
+// Factory Function — createEvent() owns event construction.
+// Encapsulation — Kafka infrastructure configuration remains in the test factory.
+// Separation of Concerns — transport, serialization, synchronization, and assertions remain separate.
+// Deterministic Synchronization — consumer readiness occurs before publishing.
+// Test Isolation — unique groupId and eventId isolate this test.
+// Resource Lifecycle Management — timeout and Kafka resources are always cleaned up.
 // SRP — serialization test verifies Kafka serialization/deserialization only.
 // Factory Pattern — createTestKafka() owns Kafka client construction.
 // Factory Function — createEvent() owns event creation.
