@@ -25,7 +25,8 @@ export default class ApplicationBootstrap {
     kafkaAdmin,
     kafkaHealthChecker,
     port,
-    redisUrl
+    redisUrl,
+    corsAllowedOrigins
   ) {
     this.app = app;
     this.databaseClient = databaseClient;
@@ -35,8 +36,9 @@ export default class ApplicationBootstrap {
     this.kafkaAdmin = kafkaAdmin
     this.kafkaHealthChecker = kafkaHealthChecker
     this.port = port;
-    this.server = null;
     this.redisUrl = redisUrl
+    this.corsAllowedOrigins = corsAllowedOrigins
+    this.server = null;
     this.io = null
     this.webSocketGateway = null
     this.socketIOPubClient = null
@@ -88,7 +90,7 @@ export default class ApplicationBootstrap {
     this.server = http.createServer(this.app);
 
     // create websocket infrastructure
-    const { io, webSocketGateway, pubClient, subClient } = await createWebSocketInfrastructure(this.server, this.redisUrl);
+    const { io, webSocketGateway, pubClient, subClient } = await createWebSocketInfrastructure(this.server, this.redisUrl, this.corsAllowedOrigins);
     this.io = io;
     this.webSocketGateway = webSocketGateway;
     this.socketIOPubClient = pubClient

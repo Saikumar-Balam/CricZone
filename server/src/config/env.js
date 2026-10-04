@@ -29,7 +29,7 @@ const REQUIRED_ENV = {
         "KAFKA_BROKERS",
         "KAFKA_USERNAME",
         "KAFKA_PASSWORD",
-        "KAFKA_CA_PATH",
+        "KAFKA_CA",
         "KAFKA_LIVE_CONSUMER_GROUP",
         "CORS_ALLOWED_ORIGINS"
     ]
@@ -54,7 +54,7 @@ function validateProductionSecurity(env)
         throw new Error("Production Kafka requires at least one broker")
     }
     // Kafka TLS CA certificate must be configured
-    if(!env.KAFKA_CA_PATH.trim())
+    if(!env.KAFKA_CA.trim())
     {
         throw new Error("Production Kafka requires a TLS CA certificate")
     }
@@ -84,10 +84,13 @@ export function validateEnvironment(env = process.env)
     {
         validateProductionSecurity(env)
     }
+    const corsAllowedOrigins = (nodeEnv === "test" ? env.TEST_CORS_ALLOWED_ORIGINS : env.
+CORS_ALLOWED_ORIGINS).split(",").map(origin => origin.trim()).filter(Boolean)
     return {
         nodeEnv, 
         port: Number(env.PORT || 5000),
-        redisUrl: nodeEnv === "test" ? env.TEST_REDIS_URL : env.REDIS_URL
+        redisUrl: nodeEnv === "test" ? env.TEST_REDIS_URL : env.REDIS_URL,
+        corsAllowedOrigins
     }
 }
 

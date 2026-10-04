@@ -6,14 +6,11 @@ import { metrics } from "./metrics.container.js"
 import SocketIOAdapterClientFactory from "../websocket/SocketIOAdapterClientFactory.js"
 import SocketIORedisAdapter from "../websocket/SocketIORedisAdapter.js"
 
-export const createWebSocketInfrastructure = async(httpServer, redisUrl) => {
+export const createWebSocketInfrastructure = async(httpServer, redisUrl, allowedOrigins) => {
     const io = new Server(httpServer, {
         cors:{
-            origin: "http://localhost:5173",
-            methods: [
-                "GET" , 
-                "POST"
-        ]
+            origin: allowedOrigins,
+            methods: ["GET" , "POST"]
         }
     })
     const adapterClientFactory = new SocketIOAdapterClientFactory(redisUrl, logger, metrics)
