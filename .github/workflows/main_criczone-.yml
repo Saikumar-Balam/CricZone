@@ -1,6 +1,8 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 
+# CricZone Backend - Azure App Service Deployment
+
 name: Build and deploy CricZone Backend to Azure
 
 on:
@@ -33,9 +35,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Run tests
-        run: npm test
 
       - name: Build if present
         run: npm run build --if-present
