@@ -11,26 +11,32 @@ const brokers = process.env.KAFKA_BROKERS
     .filter(Boolean);
 
 
-function getKafkaCa()
-{
-   if (process.env.NODE_ENV === "production") {
-    const kafkaCa = process.env.KAFKA_CA;
+function getKafkaCa() {
+    if (process.env.NODE_ENV === "production") {
+        const kafkaCa = process.env.KAFKA_CA;
 
-    if (!kafkaCa) {
-        throw new Error(
-            "Missing required environment variable: KAFKA_CA"
-        );
+        if (!kafkaCa) {
+            throw new Error(
+                "Missing required environment variable: KAFKA_CA"
+            );
+        }
+
+        return kafkaCa
+            .replace(/\\n/g, "\n")
+            .trim();
     }
 
-    return kafkaCa.replace(/\\n/g, "\n");
-}
+    if (!process.env.KAFKA_CA_PATH) {
+        throw new Error(
+            "Missing required environment variable: KAFKA_CA_PATH"
+        );
+    }
 
     return fs.readFileSync(
         process.env.KAFKA_CA_PATH,
         "utf8"
-    );
+    ).trim();
 }
-
 
 const kafka = new Kafka({
     clientId:
