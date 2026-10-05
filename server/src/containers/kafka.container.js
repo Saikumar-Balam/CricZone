@@ -13,10 +13,17 @@ const brokers = process.env.KAFKA_BROKERS
 
 function getKafkaCa()
 {
-    if (process.env.NODE_ENV === "production")
-    {
-        return process.env.KAFKA_CA.replace(/\\n/g, "\n");
+   if (process.env.NODE_ENV === "production") {
+    const kafkaCa = process.env.KAFKA_CA;
+
+    if (!kafkaCa) {
+        throw new Error(
+            "Missing required environment variable: KAFKA_CA"
+        );
     }
+
+    return kafkaCa.replace(/\\n/g, "\n");
+}
 
     return fs.readFileSync(
         process.env.KAFKA_CA_PATH,
