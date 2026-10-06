@@ -21,9 +21,26 @@ function getKafkaCa() {
             );
         }
 
-        return kafkaCa
+        const normalizedCa = kafkaCa
             .replace(/\\n/g, "\n")
             .trim();
+
+        console.log("[Kafka TLS Diagnostic]", {
+            rawLength: kafkaCa.length,
+            normalizedLength: normalizedCa.length,
+            startsCorrectly:
+                normalizedCa.startsWith(
+                    "-----BEGIN CERTIFICATE-----"
+                ),
+            endsCorrectly:
+                normalizedCa.endsWith(
+                    "-----END CERTIFICATE-----"
+                ),
+            newlineCount:
+                (normalizedCa.match(/\n/g) || []).length
+        });
+
+        return normalizedCa;
     }
 
     if (!process.env.KAFKA_CA_PATH) {
