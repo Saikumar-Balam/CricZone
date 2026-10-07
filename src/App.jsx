@@ -15,7 +15,7 @@ import News from "./pages/News";
 import NewsDetails from "./pages/NewsDetails";
 import Search from "./pages/Search";
 import MainLayout from "./layouts/MainLayout";
-import WebSocketTest from "./components/WebSocketTest";
+
 
 function App() {
   return (
@@ -48,7 +48,6 @@ function App() {
         </Route>
       </Routes>
     </BrowserRouter>
-    <WebSocketTest/>
     </>
   );
 }
