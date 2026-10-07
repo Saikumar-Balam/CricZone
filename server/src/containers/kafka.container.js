@@ -1,6 +1,5 @@
 import { Kafka, Partitioners } from "kafkajs";
 import fs from "node:fs";
-import tls from "node:tls";
 
 import KafkaAdminHealthChecker
     from "../messaging/KafkaAdminHealthChecker.js";
@@ -22,26 +21,9 @@ function getKafkaCa() {
             );
         }
 
-        const normalizedCa = kafkaCa
+        return kafkaCa
             .replace(/\\n/g, "\n")
             .trim();
-
-        console.log("[Kafka TLS Diagnostic]", {
-            rawLength: kafkaCa.length,
-            normalizedLength: normalizedCa.length,
-            startsCorrectly:
-                normalizedCa.startsWith(
-                    "-----BEGIN CERTIFICATE-----"
-                ),
-            endsCorrectly:
-                normalizedCa.endsWith(
-                    "-----END CERTIFICATE-----"
-                ),
-            newlineCount:
-                (normalizedCa.match(/\n/g) || []).length
-        });
-
-        return normalizedCa;
     }
 
     if (!process.env.KAFKA_CA_PATH) {
@@ -55,101 +37,6 @@ function getKafkaCa() {
         "utf8"
     ).trim();
 }
-
-
-function testKafkaTlsConnection() {
-    if (process.env.NODE_ENV !== "production") {
-        return;
-    }
-
-    const [broker] = brokers;
-
-    if (!broker) {
-        console.error(
-            "[Node TLS Diagnostic] No Kafka broker configured"
-        );
-        return;
-    }
-
-    const lastColonIndex =
-        broker.lastIndexOf(":");
-
-    if (lastColonIndex === -1) {
-        console.error(
-            "[Node TLS Diagnostic] Invalid Kafka broker format"
-        );
-        return;
-    }
-
-    const host =
-        broker.slice(0, lastColonIndex);
-
-    const port =
-        Number(
-            broker.slice(lastColonIndex + 1)
-        );
-
-    console.log(
-        "[Node TLS Diagnostic] Testing direct TLS connection..."
-    );
-
-    const socket = tls.connect({
-        host,
-        port,
-        servername: host,
-
-        ca: [
-            getKafkaCa()
-        ],
-
-        rejectUnauthorized: true
-    });
-
-
-    socket.once("secureConnect", () => {
-        console.log("[Node TLS Diagnostic]", {
-            authorized:
-                socket.authorized,
-
-            authorizationError:
-                socket.authorizationError || null,
-
-            protocol:
-                socket.getProtocol()
-        });
-
-        socket.end();
-    });
-
-
-    socket.once("error", (error) => {
-        console.error(
-            "[Node TLS Diagnostic] FAILED",
-            {
-                name:
-                    error.name,
-
-                code:
-                    error.code,
-
-                message:
-                    error.message
-            }
-        );
-    });
-
-
-    socket.setTimeout(10000, () => {
-        console.error(
-            "[Node TLS Diagnostic] FAILED: connection timeout"
-        );
-
-        socket.destroy();
-    });
-}
-
-
-testKafkaTlsConnection();
 
 
 const kafka = new Kafka({
@@ -222,23 +109,23 @@ export {
 
 // LLD principles used:
 //
-// SRP — Kafka client construction and TLS diagnostics have
-// clearly separated responsibilities.
+// SRP — this container is responsible for constructing and exposing
+// Kafka infrastructure dependencies.
 //
-// Encapsulation — certificate loading and normalization are
-// centralized in getKafkaCa().
+// Encapsulation — Kafka CA loading and normalization are centralized
+// in getKafkaCa().
 //
-// Configuration over hardcoding — Kafka brokers, credentials,
-// consumer group and TLS CA come from environment configuration.
+// Configuration over hardcoding — brokers, credentials, consumer
+// group and TLS CA come from environment configuration.
 //
-// Environment independence — development loads the CA from a
-// certificate file while Azure production injects it directly.
+// Environment independence — development loads the CA from a file,
+// while production receives the CA through environment configuration.
 //
-// Separation of Concerns — Node TLS diagnostics are isolated
-// from KafkaJS transport configuration.
+// Separation of Concerns — Kafka infrastructure construction remains
+// separate from application/business logic.
 //
-// Fail Fast — invalid Kafka/TLS configuration remains visible
-// during startup.
+// Fail Fast — missing Kafka CA configuration causes startup failure
+// instead of silently creating an invalid Kafka connection.
 //
-// Secure by Default — TLS certificate verification remains
-// enabled with rejectUnauthorized: true.
+// Secure by Default — Kafka communication continues to use TLS and
+// SASL authentication.
