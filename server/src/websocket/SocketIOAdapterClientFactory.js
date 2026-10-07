@@ -1,77 +1,116 @@
-import {createClient} from "redis"
+import Redis from "ioredis";
+
 export default class SocketIOAdapterClientFactory {
-    constructor(redisUrl, logger, metrics)
-    {
-        this.redisUrl = redisUrl
-        this.logger = logger
-        this.metrics = metrics
+    constructor(redisUrl, logger, metrics) {
+        this.redisUrl = redisUrl;
+        this.logger = logger;
+        this.metrics = metrics;
     }
 
-    async create()
-    {
-        const pubClient = createClient({url: this.redisUrl})
-        const subClient = pubClient.duplicate()
+    async create() {
+        const pubClient = new Redis(this.redisUrl, {
+            lazyConnect: true,
+            enableReadyCheck: true,
+            maxRetriesPerRequest: null,
+            retryStrategy(times) {
+                return Math.min(times * 200, 5000);
+            }
+        });
 
-        this.#registerRuntimeListener(pubClient, "publisher")
-        this.#registerRuntimeListener(subClient, "subscriber")
+        const subClient = pubClient.duplicate();
+
+        this.#registerRuntimeListener(pubClient, "publisher");
+        this.#registerRuntimeListener(subClient, "subscriber");
+
         try {
-        await Promise.all([
-            pubClient.connect(),
-            subClient.connect()
-        ])
+            await Promise.all([
+                pubClient.connect(),
+                subClient.connect()
+            ]);
 
-        this.logger.info("Socket.IO Redis adapter clients connected")
-        return {pubClient, subClient}
-    }
-    catch(error)
-    {
-        this.logger.error("Socket.IO Redis adapter connection failed", {
-            errorMessage: error.message
-        })
-        await Promise.allSettled([this.#closeClient(pubClient),
-            this.#closeClient(subClient)
-        ])
-        throw error
-    }
-}
-// private method
-    async #closeClient(client)
-    {
-        if(!client?.isOpen)
-        {
-            return
+            this.logger.info(
+                "Socket.IO Redis adapter clients connected"
+            );
+
+            return {
+                pubClient,
+                subClient
+            };
+        } catch (error) {
+            this.logger.error(
+                "Socket.IO Redis adapter connection failed",
+                {
+                    errorMessage: error.message
+                }
+            );
+
+            await Promise.allSettled([
+                this.#closeClient(pubClient),
+                this.#closeClient(subClient)
+            ]);
+
+            throw error;
         }
+    }
+
+    async #closeClient(client) {
+        if (!client) {
+            return;
+        }
+
         try {
-            await client.quit()
-        }
-        catch{
-            client.disconnect()
+            await client.quit();
+        } catch {
+            client.disconnect();
         }
     }
 
-    #registerRuntimeListener(client, role)
-    {
+    #registerRuntimeListener(client, role) {
         client.on("error", (error) => {
-            this.metrics.incrementCounter("websocket_adapter_errors_total",1, {role})
+            this.metrics.incrementCounter(
+                "websocket_adapter_errors_total",
+                1,
+                { role }
+            );
 
-            this.logger.error("Socket.IO Redis adapter client error", {
-                role,
-                errorMessage: error.message
-            })
-        })
+            this.logger.error(
+                "Socket.IO Redis adapter client error",
+                {
+                    role,
+                    errorMessage: error.message
+                }
+            );
+        });
 
-        client.on("reconnecting", () => {
-            this.metrics.incrementCounter("websocket_adapter_reconnects_total", 1, { role })
-            this.logger.warn("Socket.IO Redis adapter client reconnecting", { role })
-        })
+        client.on("reconnecting", (delay) => {
+            this.metrics.incrementCounter(
+                "websocket_adapter_reconnects_total",
+                1,
+                { role }
+            );
+
+            this.logger.warn(
+                "Socket.IO Redis adapter client reconnecting",
+                {
+                    role,
+                    delay
+                }
+            );
+        });
 
         client.on("ready", () => {
-            this.logger.info("Socket.IO Redis adapter client ready", { role })
-        })
+            this.logger.info(
+                "Socket.IO Redis adapter client ready",
+                { role }
+            );
+        });
 
         client.on("end", () => {
-            this.logger.warn("Socket.IO Redis adapter client connection ended", { role })
-        })
+            this.logger.warn(
+                "Socket.IO Redis adapter client connection ended",
+                { role }
+            );
+        });
     }
 }
 

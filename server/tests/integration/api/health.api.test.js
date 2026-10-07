@@ -1,4 +1,9 @@
-import { describe, it, vi, expect } from "vitest";
+import {
+    describe,
+    it,
+    vi,
+    expect
+} from "vitest";
 
 import request from "supertest";
 import express from "express";
@@ -25,39 +30,54 @@ describe("GET /api/v1/health Integration", () => {
             ping: vi.fn()
         };
 
-        const kafkaProducer = {};
+        const kafkaHealthChecker = {
+            check: vi.fn()
+        };
 
         const healthService =
             new HealthService(
                 databaseClient,
                 redisClient,
-                kafkaProducer
+                kafkaHealthChecker
             );
 
         const healthController =
-            new HealthController(healthService);
+            new HealthController(
+                healthService
+            );
 
         const healthRouter =
-            createHealthRouter(healthController);
+            createHealthRouter(
+                healthController
+            );
 
-        const apiRouter = express.Router();
+        const apiRouter =
+            express.Router();
 
-        apiRouter.use("/", healthRouter);
+        apiRouter.use(
+            "/",
+            healthRouter
+        );
 
         const app = express();
 
-        app.use("/api/v1", apiRouter);
+        app.use(
+            "/api/v1",
+            apiRouter
+        );
 
         const response =
             await request(app)
                 .get("/api/v1/health");
 
-        expect(response.status).toBe(200);
+        expect(response.status)
+            .toBe(200);
 
-        expect(response.body).toEqual({
-            status: "UP",
-            service: "CricZone API"
-        });
+        expect(response.body)
+            .toEqual({
+                status: "UP",
+                service: "CricZone API"
+            });
 
         expect(
             response.headers["content-type"]
@@ -70,6 +90,10 @@ describe("GET /api/v1/health Integration", () => {
 
         expect(
             redisClient.ping
+        ).not.toHaveBeenCalled();
+
+        expect(
+            kafkaHealthChecker.check
         ).not.toHaveBeenCalled();
     });
 });
@@ -84,24 +108,34 @@ describe("GET /api/v1/ready Integration", () => {
             }),
 
         redisPing =
-            vi.fn().mockResolvedValue("PONG"),
+            vi.fn().mockResolvedValue(
+                "PONG"
+            ),
 
-        kafkaProducer = {}
+        kafkaHealthCheck =
+            vi.fn().mockResolvedValue({
+                healthy: true
+            })
     } = {}) {
 
         const databaseClient = {
-            healthCheck: databaseHealthCheck
+            healthCheck:
+                databaseHealthCheck
         };
 
         const redisClient = {
             ping: redisPing
         };
 
+        const kafkaHealthChecker = {
+            check: kafkaHealthCheck
+        };
+
         const healthService =
             new HealthService(
                 databaseClient,
                 redisClient,
-                kafkaProducer
+                kafkaHealthChecker
             );
 
         const healthController =
@@ -132,7 +166,8 @@ describe("GET /api/v1/ready Integration", () => {
         return {
             app,
             databaseClient,
-            redisClient
+            redisClient,
+            kafkaHealthChecker
         };
     }
 
@@ -144,7 +179,8 @@ describe("GET /api/v1/ready Integration", () => {
             const {
                 app,
                 databaseClient,
-                redisClient
+                redisClient,
+                kafkaHealthChecker
             } = createReadyApp();
 
             const response =
@@ -171,6 +207,10 @@ describe("GET /api/v1/ready Integration", () => {
 
             expect(
                 redisClient.ping
+            ).toHaveBeenCalledTimes(1);
+
+            expect(
+                kafkaHealthChecker.check
             ).toHaveBeenCalledTimes(1);
         }
     );
@@ -249,12 +289,17 @@ describe("GET /api/v1/ready Integration", () => {
 
 
     it(
-        "should return 503 NOT_READY when Kafka producer is unavailable",
+        "should return 503 NOT_READY when Kafka is unavailable",
         async () => {
+
+            const kafkaHealthCheck =
+                vi.fn().mockResolvedValue({
+                    healthy: false
+                });
 
             const { app } =
                 createReadyApp({
-                    kafkaProducer: null
+                    kafkaHealthCheck
                 });
 
             const response =
@@ -277,10 +322,11 @@ describe("GET /api/v1/ready Integration", () => {
         }
     );
 });
-// DIP — readiness uses DatabaseClient.healthCheck().
-// DI — fake infrastructure dependencies are injected.
+
+// DIP — readiness depends on infrastructure health abstractions.
+// DI — fake database, Redis, and Kafka health dependencies are injected.
 // SRP — /health handles liveness; /ready handles readiness.
-// Encapsulation — SQL is hidden inside the PostgreSQL implementation.
+// Encapsulation — infrastructure-specific checks stay outside the controller.
 // Factory Pattern — createHealthRouter() constructs routing.
 // Layered Architecture — Router → Controller → Service → infrastructure abstraction.
-// Test Isolation — API behavior is tested without real Neon/Redis/Kafka.
+// Test Isolation — API behavior is tested without real Neon/Valkey/Kafka.

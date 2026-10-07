@@ -1,7 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from "vitest";
 
 const {
-    createClientMock,
     pubClient,
     subClient
 } = vi.hoisted(() => {
@@ -11,90 +16,109 @@ const {
         connect: vi.fn(),
         duplicate: vi.fn(),
         quit: vi.fn(),
-        disconnect: vi.fn(),
-        isOpen: false
-    }
+        disconnect: vi.fn()
+    };
 
     const subClient = {
         on: vi.fn(),
         connect: vi.fn(),
         quit: vi.fn(),
-        disconnect: vi.fn(),
-        isOpen: false
+        disconnect: vi.fn()
+    };
+
+    return {
+        pubClient,
+        subClient
+    };
+});
+
+vi.mock("ioredis", () => {
+
+    class RedisMock {
+        constructor() {
+            return pubClient;
+        }
     }
 
     return {
-        createClientMock: vi.fn(),
-        pubClient,
-        subClient
-    }
-})
-
-vi.mock("redis", () => ({
-    createClient: createClientMock
-}))
+        default: RedisMock
+    };
+});
 
 import SocketIOAdapterClientFactory
-    from "../../../src/websocket/SocketIOAdapterClientFactory.js"
+    from "../../../src/websocket/SocketIOAdapterClientFactory.js";
 
 describe("SocketIOAdapterClientFactory", () => {
 
-    let logger
-    let metrics
+    let logger;
+    let metrics;
 
     beforeEach(() => {
 
-        vi.clearAllMocks()
-
-        pubClient.isOpen = false
-        subClient.isOpen = false
+        vi.clearAllMocks();
 
         pubClient.duplicate.mockReturnValue(
             subClient
-        )
+        );
 
-        createClientMock.mockReturnValue(
-            pubClient
-        )
+        pubClient.connect.mockResolvedValue(
+            undefined
+        );
+
+        subClient.connect.mockResolvedValue(
+            undefined
+        );
+
+        pubClient.quit.mockResolvedValue(
+            undefined
+        );
+
+        subClient.quit.mockResolvedValue(
+            undefined
+        );
+
+        pubClient.disconnect.mockReturnValue(
+            undefined
+        );
+
+        subClient.disconnect.mockReturnValue(
+            undefined
+        );
 
         logger = {
             info: vi.fn(),
             warn: vi.fn(),
             error: vi.fn()
-        }
+        };
 
         metrics = {
             incrementCounter: vi.fn()
-        }
-    })
+        };
+    });
 
     it(
         "should log and propagate adapter connection failure",
         async () => {
 
             const connectionError =
-                new Error("Valkey unavailable")
+                new Error("Valkey unavailable");
 
             pubClient.connect.mockRejectedValue(
                 connectionError
-            )
-
-            subClient.connect.mockResolvedValue(
-                undefined
-            )
+            );
 
             const factory =
                 new SocketIOAdapterClientFactory(
                     "rediss://test-valkey",
                     logger,
                     metrics
-                )
+                );
 
             await expect(
                 factory.create()
             ).rejects.toThrow(
                 "Valkey unavailable"
-            )
+            );
 
             expect(
                 logger.error
@@ -104,57 +128,55 @@ describe("SocketIOAdapterClientFactory", () => {
                     errorMessage:
                         "Valkey unavailable"
                 }
-            )
+            );
+
+            expect(
+                pubClient.quit
+            ).toHaveBeenCalledTimes(1);
+
+            expect(
+                subClient.quit
+            ).toHaveBeenCalledTimes(1);
         }
-    )
+    );
 
     it(
-        "should clean up connected clients when partial startup fails",
+        "should clean up clients when partial startup fails",
         async () => {
 
             const connectionError =
-                new Error("Subscriber connection failed")
+                new Error(
+                    "Subscriber connection failed"
+                );
 
-            pubClient.connect.mockImplementation(
-                async () => {
-                    pubClient.isOpen = true
-                }
-            )
+            pubClient.connect.mockResolvedValue(
+                undefined
+            );
 
             subClient.connect.mockRejectedValue(
                 connectionError
-            )
-
-            pubClient.quit.mockImplementation(
-                async () => {
-                    pubClient.isOpen = false
-                }
-            )
+            );
 
             const factory =
                 new SocketIOAdapterClientFactory(
                     "rediss://test-valkey",
                     logger,
                     metrics
-                )
+                );
 
             await expect(
                 factory.create()
             ).rejects.toThrow(
                 "Subscriber connection failed"
-            )
+            );
 
             expect(
                 pubClient.quit
-            ).toHaveBeenCalledTimes(1)
-
-            expect(
-                pubClient.isOpen
-            ).toBe(false)
+            ).toHaveBeenCalledTimes(1);
 
             expect(
                 subClient.quit
-            ).not.toHaveBeenCalled()
+            ).toHaveBeenCalledTimes(1);
 
             expect(
                 logger.error
@@ -164,70 +186,82 @@ describe("SocketIOAdapterClientFactory", () => {
                     errorMessage:
                         "Subscriber connection failed"
                 }
-            )
+            );
         }
-    )
+    );
 
     it(
         "should register and handle runtime lifecycle events",
         async () => {
 
-            const pubHandlers = {}
+            const pubHandlers = {};
 
             pubClient.on.mockImplementation(
                 (event, handler) => {
-                    pubHandlers[event] = handler
+                    pubHandlers[event] = handler;
+                    return pubClient;
                 }
-            )
-
-            pubClient.connect.mockImplementation(
-                async () => {
-                    pubClient.isOpen = true
-                }
-            )
-
-            subClient.connect.mockImplementation(
-                async () => {
-                    subClient.isOpen = true
-                }
-            )
+            );
 
             const factory =
                 new SocketIOAdapterClientFactory(
                     "rediss://test-valkey",
                     logger,
                     metrics
-                )
+                );
 
-            await factory.create()
+            const clients =
+                await factory.create();
 
-            expect(pubClient.on).toHaveBeenCalledWith(
+            expect(
+                clients.pubClient
+            ).toBe(pubClient);
+
+            expect(
+                clients.subClient
+            ).toBe(subClient);
+
+            expect(
+                pubClient.duplicate
+            ).toHaveBeenCalledTimes(1);
+
+            expect(
+                pubClient.on
+            ).toHaveBeenCalledWith(
                 "error",
                 expect.any(Function)
-            )
+            );
 
-            expect(pubClient.on).toHaveBeenCalledWith(
+            expect(
+                pubClient.on
+            ).toHaveBeenCalledWith(
                 "reconnecting",
                 expect.any(Function)
-            )
+            );
 
-            expect(pubClient.on).toHaveBeenCalledWith(
+            expect(
+                pubClient.on
+            ).toHaveBeenCalledWith(
                 "ready",
                 expect.any(Function)
-            )
+            );
 
-            expect(pubClient.on).toHaveBeenCalledWith(
+            expect(
+                pubClient.on
+            ).toHaveBeenCalledWith(
                 "end",
                 expect.any(Function)
-            )
+            );
 
             pubHandlers.error(
-                new Error("Runtime Valkey failure")
-            )
+                new Error(
+                    "Runtime Valkey failure"
+                )
+            );
 
-            pubHandlers.reconnecting()
-            pubHandlers.ready()
-            pubHandlers.end()
+            pubHandlers.reconnecting(1000);
+            pubHandlers.ready();
+            pubHandlers.end();
 
             expect(
                 metrics.incrementCounter
@@ -237,7 +271,7 @@ describe("SocketIOAdapterClientFactory", () => {
                 {
                     role: "publisher"
                 }
-            )
+            );
 
             expect(
                 metrics.incrementCounter
@@ -247,40 +281,56 @@ describe("SocketIOAdapterClientFactory", () => {
                 {
                     role: "publisher"
                 }
-            )
+            );
 
-            expect(logger.error).toHaveBeenCalledWith(
+            expect(
+                logger.error
+            ).toHaveBeenCalledWith(
                 "Socket.IO Redis adapter client error",
                 {
                     role: "publisher",
                     errorMessage:
                         "Runtime Valkey failure"
                 }
-            )
+            );
 
-            expect(logger.warn).toHaveBeenCalledWith(
+            expect(
+                logger.warn
+            ).toHaveBeenCalledWith(
                 "Socket.IO Redis adapter client reconnecting",
                 {
-                    role: "publisher"
+                    role: "publisher",
+                    delay: 1000
                 }
-            )
+            );
 
-            expect(logger.info).toHaveBeenCalledWith(
+            expect(
+                logger.info
+            ).toHaveBeenCalledWith(
                 "Socket.IO Redis adapter client ready",
                 {
                     role: "publisher"
                 }
-            )
+            );
 
-            expect(logger.warn).toHaveBeenCalledWith(
+            expect(
+                logger.warn
+            ).toHaveBeenCalledWith(
                 "Socket.IO Redis adapter client connection ended",
                 {
                     role: "publisher"
                 }
-            )
+            );
         }
-    )
-})
+    );
+});
+
+// Test Isolation — no real Aiven/Valkey connection is used.
+// Dependency Isolation — ioredis is replaced by a constructable test double.
+// Fail Fast — startup failures propagate to the caller.
+// Resource Safety — factory-owned clients are cleaned up after failed startup.
+// Observability — runtime error/reconnect/ready/end events are verified.
+// SRP — tests only Socket.IO adapter client lifecycle behavior.
 
 // Test Isolation — no real Aiven/Valkey connection is used.
 // Dependency Isolation — external Redis client behavior is mocked.

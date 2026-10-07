@@ -2,23 +2,26 @@ import {
     describe,
     it,
     expect
-} from "vitest"
+} from "vitest";
+
 import CorsMiddleware
-    from "../../../src/middleware/CorsMiddleware.js"
+    from "../../../src/middleware/CorsMiddleware.js";
 
 import { createErrorHandler }
-    from "../../../src/middleware/error.middleware.js"
+    from "../../../src/middleware/error.middleware.js";
 
-import request from "supertest"
-import express from "express"
+import request from "supertest";
+import express from "express";
 
 import SecurityHeadersMiddleware
-    from "../../../src/middleware/SecurityHeadersMiddleware.js"
+    from "../../../src/middleware/SecurityHeadersMiddleware.js";
+
 import JsonErrorMiddleware
-    from "../../../src/middleware/JsonErrorMiddleware.js"
+    from "../../../src/middleware/JsonErrorMiddleware.js";
+
 import {
     validateEnvironment
-} from "../../../src/config/env.js"
+} from "../../../src/config/env.js";
 
 
 describe("Security API Integration", () => {
@@ -27,9 +30,9 @@ describe("Security API Integration", () => {
         isProduction = false
     } = {}) {
 
-        const app = express()
+        const app = express();
 
-        app.disable("x-powered-by")
+        app.disable("x-powered-by");
 
         const securityHeadersMiddleware =
             new SecurityHeadersMiddleware({
@@ -42,848 +45,941 @@ describe("Security API Integration", () => {
                             includeSubDomains: true
                         }
                         : false
-            })
+            });
 
         app.use(
             securityHeadersMiddleware.handle
-        )
+        );
 
         app.get("/test", (req, res) => {
             return res.status(200).json({
                 success: true
-            })
-        })
+            });
+        });
 
-        return app
+        return app;
     }
 
 
     describe("Security Headers", () => {
 
-        it("should set Content-Security-Policy", async () => {
+        it(
+            "should set Content-Security-Policy",
+            async () => {
 
-            const app =
-                createSecurityApp()
+                const app =
+                    createSecurityApp();
 
-            const response =
-                await request(app)
-                    .get("/test")
+                const response =
+                    await request(app)
+                        .get("/test");
 
-            expect(
-                response.headers[
-                    "content-security-policy"
-                ]
-            ).toBeDefined()
-        })
-
-
-        it("should set X-Content-Type-Options to nosniff", async () => {
-
-            const app =
-                createSecurityApp()
-
-            const response =
-                await request(app)
-                    .get("/test")
-
-            expect(
-                response.headers[
-                    "x-content-type-options"
-                ]
-            ).toBe("nosniff")
-        })
+                expect(
+                    response.headers[
+                        "content-security-policy"
+                    ]
+                ).toBeDefined();
+            }
+        );
 
 
-        it("should set frame protection", async () => {
+        it(
+            "should set X-Content-Type-Options to nosniff",
+            async () => {
 
-            const app =
-                createSecurityApp()
+                const app =
+                    createSecurityApp();
 
-            const response =
-                await request(app)
-                    .get("/test")
+                const response =
+                    await request(app)
+                        .get("/test");
 
-            expect(
-                response.headers[
-                    "x-frame-options"
-                ]
-            ).toBeDefined()
-        })
-
-
-        it("should set Referrer-Policy", async () => {
-
-            const app =
-                createSecurityApp()
-
-            const response =
-                await request(app)
-                    .get("/test")
-
-            expect(
-                response.headers[
-                    "referrer-policy"
-                ]
-            ).toBeDefined()
-        })
+                expect(
+                    response.headers[
+                        "x-content-type-options"
+                    ]
+                ).toBe("nosniff");
+            }
+        );
 
 
-        it("should not expose X-Powered-By", async () => {
+        it(
+            "should set frame protection",
+            async () => {
 
-            const app =
-                createSecurityApp()
+                const app =
+                    createSecurityApp();
 
-            const response =
-                await request(app)
-                    .get("/test")
+                const response =
+                    await request(app)
+                        .get("/test");
 
-            expect(
-                response.headers[
-                    "x-powered-by"
-                ]
-            ).toBeUndefined()
-        })
-
-
-        it("should not enable HSTS outside production", async () => {
-
-            const app =
-                createSecurityApp({
-                    isProduction: false
-                })
-
-            const response =
-                await request(app)
-                    .get("/test")
-
-            expect(
-                response.headers[
-                    "strict-transport-security"
-                ]
-            ).toBeUndefined()
-        })
+                expect(
+                    response.headers[
+                        "x-frame-options"
+                    ]
+                ).toBeDefined();
+            }
+        );
 
 
-        it("should enable HSTS in production", async () => {
+        it(
+            "should set Referrer-Policy",
+            async () => {
 
-            const app =
-                createSecurityApp({
-                    isProduction: true
-                })
+                const app =
+                    createSecurityApp();
 
-            const response =
-                await request(app)
-                    .get("/test")
+                const response =
+                    await request(app)
+                        .get("/test");
 
-            expect(
-                response.headers[
-                    "strict-transport-security"
-                ]
-            ).toContain(
-                "max-age=31536000"
-            )
-        })
+                expect(
+                    response.headers[
+                        "referrer-policy"
+                    ]
+                ).toBeDefined();
+            }
+        );
 
-    })
-    
 
-    
+        it(
+            "should not expose X-Powered-By",
+            async () => {
+
+                const app =
+                    createSecurityApp();
+
+                const response =
+                    await request(app)
+                        .get("/test");
+
+                expect(
+                    response.headers[
+                        "x-powered-by"
+                    ]
+                ).toBeUndefined();
+            }
+        );
+
+
+        it(
+            "should not enable HSTS outside production",
+            async () => {
+
+                const app =
+                    createSecurityApp({
+                        isProduction: false
+                    });
+
+                const response =
+                    await request(app)
+                        .get("/test");
+
+                expect(
+                    response.headers[
+                        "strict-transport-security"
+                    ]
+                ).toBeUndefined();
+            }
+        );
+
+
+        it(
+            "should enable HSTS in production",
+            async () => {
+
+                const app =
+                    createSecurityApp({
+                        isProduction: true
+                    });
+
+                const response =
+                    await request(app)
+                        .get("/test");
+
+                expect(
+                    response.headers[
+                        "strict-transport-security"
+                    ]
+                ).toContain(
+                    "max-age=31536000"
+                );
+            }
+        );
+
+    });
+
+
     // SRP — this test section verifies HTTP security headers only.
     // Black-box Testing — Supertest verifies actual client-visible headers.
     // Testability — middleware is independently constructible.
     // Regression Protection — required security headers can't disappear unnoticed.
     // Separation of Concerns — header security tests remain separate from CORS/rate-limit tests.
 
+
     describe("CORS", () => {
 
-    function createCorsApp() {
+        function createCorsApp() {
 
-        const allowedOrigins = [
-            "https://criczone.example.com"
-        ]
-
-        const corsMiddleware =
-            new CorsMiddleware(
-                allowedOrigins
-            )
-
-        const logger = {
-            error: () => {}
-        }
-
-        const errorHandler =
-            createErrorHandler(logger)
-
-        const app = express()
-
-        // Simulates RequestIDMiddleware.
-        app.use((req, res, next) => {
-            req.requestId =
-                "test-request-id"
-
-            req.traceId =
-                "test-trace-id"
-
-            next()
-        })
-
-        app.use(
-            corsMiddleware.handle
-        )
-
-        app.get("/test", (req, res) => {
-            return res.status(200).json({
-                success: true
-            })
-        })
-
-        app.use(errorHandler)
-
-        return app
-    }
-
-
-    it("should allow configured origin", async () => {
-
-        const app =
-            createCorsApp()
-
-        const response =
-            await request(app)
-                .get("/test")
-                .set(
-                    "Origin",
-                    "https://criczone.example.com"
-                )
-
-        expect(response.status)
-            .toBe(200)
-
-        expect(
-            response.headers[
-                "access-control-allow-origin"
-            ]
-        ).toBe(
-            "https://criczone.example.com"
-        )
-    })
-
-
-    it("should reject untrusted origin", async () => {
-
-        const app =
-            createCorsApp()
-
-        const response =
-            await request(app)
-                .get("/test")
-                .set(
-                    "Origin",
-                    "https://attacker.example.com"
-                )
-
-        expect(response.status)
-            .toBe(403)
-
-        expect(response.body)
-            .toEqual({
-                success: false,
-
-                error: {
-                    code:
-                        "CORS_ORIGIN_FORBIDDEN",
-
-                    message:
-                        "Origin not allowed by CORS",
-
-                    requestId:
-                        "test-request-id"
-                }
-            })
-    })
-
-
-    it("should allow request without Origin header", async () => {
-
-        const app =
-            createCorsApp()
-
-        const response =
-            await request(app)
-                .get("/test")
-
-        expect(response.status)
-            .toBe(200)
-
-        expect(response.body)
-            .toEqual({
-                success: true
-            })
-    })
-
-it("should allow GET request from configured origin", async () => {
-
-    const app =
-        createCorsApp()
-
-    const response =
-        await request(app)
-            .get("/test")
-            .set(
-                "Origin",
+            const allowedOrigins = [
                 "https://criczone.example.com"
-            )
+            ];
 
-    expect(response.status)
-        .toBe(200)
+            const corsMiddleware =
+                new CorsMiddleware(
+                    allowedOrigins
+                );
 
-    expect(
-        response.headers[
-            "access-control-allow-origin"
-        ]
-    ).toBe(
-        "https://criczone.example.com"
-    )
-})
+            const logger = {
+                error: () => {}
+            };
 
+            const errorHandler =
+                createErrorHandler(logger);
 
-    it("should handle OPTIONS preflight request", async () => {
+            const app = express();
 
-        const app =
-            createCorsApp()
+            // Simulates RequestIDMiddleware.
+            app.use((req, res, next) => {
 
-        const response =
-            await request(app)
-                .options("/test")
-                .set(
-                    "Origin",
-                    "https://criczone.example.com"
-                )
-                .set(
-                    "Access-Control-Request-Method",
-                    "GET"
-                )
+                req.requestId =
+                    "test-request-id";
 
-        expect(
-            response.status
-        ).toBe(204)
+                req.traceId =
+                    "test-trace-id";
 
-        expect(
-            response.headers[
-                "access-control-allow-origin"
-            ]
-        ).toBe(
-            "https://criczone.example.com"
-        )
+                next();
+            });
 
-        expect(
-            response.headers[
-                "access-control-allow-methods"
-            ]
-        ).toContain("GET")
-    })
+            app.use(
+                corsMiddleware.handle
+            );
 
+            app.get("/test", (req, res) => {
+                return res.status(200).json({
+                    success: true
+                });
+            });
 
-    it("should allow configured request headers", async () => {
+            app.use(errorHandler);
 
-        const app =
-            createCorsApp()
-
-        const response =
-            await request(app)
-                .options("/test")
-                .set(
-                    "Origin",
-                    "https://criczone.example.com"
-                )
-                .set(
-                    "Access-Control-Request-Method",
-                    "GET"
-                )
-                .set(
-                    "Access-Control-Request-Headers",
-                    "Content-Type, Accept"
-                )
-
-        expect(
-            response.headers[
-                "access-control-allow-headers"
-            ]
-        ).toContain(
-            "Content-Type"
-        )
-
-        expect(
-            response.headers[
-                "access-control-allow-headers"
-            ]
-        ).toContain(
-            "Accept"
-        )
-    })
-
-
-    it("should not enable credential sharing", async () => {
-
-        const app =
-            createCorsApp()
-
-        const response =
-            await request(app)
-                .get("/test")
-                .set(
-                    "Origin",
-                    "https://criczone.example.com"
-                )
-
-        expect(
-            response.headers[
-                "access-control-allow-credentials"
-            ]
-        ).toBeUndefined()
-    })
-
-})
-
-// Black-box Testing — test actual HTTP/CORS semantics.
-// SRP — GET test verifies GET behavior; preflight test verifies preflight headers.
-// Regression Protection — validates the intended CORS contract without asserting incorrect behavior.
-// Separation of Concerns — don't change correct production middleware to satisfy an incorrect test.
-
-
-describe("Payload Limits", () => {
-
-    function createPayloadLimitApp() {
-
-        const logger = {
-            error: () => {}
+            return app;
         }
 
-        const errorHandler =
-            createErrorHandler(logger)
 
-        const jsonErrorMiddleware =
-            new JsonErrorMiddleware()
+        it(
+            "should allow configured origin",
+            async () => {
 
-        const app = express()
+                const app =
+                    createCorsApp();
 
-        // Simulates RequestIDMiddleware.
-        app.use((req, res, next) => {
+                const response =
+                    await request(app)
+                        .get("/test")
+                        .set(
+                            "Origin",
+                            "https://criczone.example.com"
+                        );
 
-            req.requestId =
-                "test-request-id"
+                expect(response.status)
+                    .toBe(200);
 
-            req.traceId =
-                "test-trace-id"
-
-            next()
-        })
-
-        app.use(
-            express.json({
-                limit: "10kb"
-            })
-        )
-
-        app.post(
-            "/test",
-            (req, res) => {
-
-                return res
-                    .status(200)
-                    .json({
-                        success: true,
-                        data: req.body
-                    })
+                expect(
+                    response.headers[
+                        "access-control-allow-origin"
+                    ]
+                ).toBe(
+                    "https://criczone.example.com"
+                );
             }
-        )
-
-        // Converts Express JSON parser errors
-        // into CricZone AppErrors.
-        app.use(
-            jsonErrorMiddleware.handle
-        )
-
-        // Converts AppErrors into the
-        // standard CricZone HTTP contract.
-        app.use(
-            errorHandler
-        )
-
-        return app
-    }
+        );
 
 
-    it("should allow JSON payload below 10kb", async () => {
+        it(
+            "should reject untrusted origin",
+            async () => {
 
-        const app =
-            createPayloadLimitApp()
+                const app =
+                    createCorsApp();
 
-        const response =
-            await request(app)
-                .post("/test")
-                .send({
-                    message:
-                        "CricZone"
+                const response =
+                    await request(app)
+                        .get("/test")
+                        .set(
+                            "Origin",
+                            "https://attacker.example.com"
+                        );
+
+                expect(response.status)
+                    .toBe(403);
+
+                expect(response.body)
+                    .toEqual({
+                        success: false,
+
+                        error: {
+                            code:
+                                "CORS_ORIGIN_FORBIDDEN",
+
+                            message:
+                                "Origin not allowed by CORS",
+
+                            requestId:
+                                "test-request-id"
+                        }
+                    });
+            }
+        );
+
+
+        it(
+            "should allow request without Origin header",
+            async () => {
+
+                const app =
+                    createCorsApp();
+
+                const response =
+                    await request(app)
+                        .get("/test");
+
+                expect(response.status)
+                    .toBe(200);
+
+                expect(response.body)
+                    .toEqual({
+                        success: true
+                    });
+            }
+        );
+
+
+        it(
+            "should allow GET request from configured origin",
+            async () => {
+
+                const app =
+                    createCorsApp();
+
+                const response =
+                    await request(app)
+                        .get("/test")
+                        .set(
+                            "Origin",
+                            "https://criczone.example.com"
+                        );
+
+                expect(response.status)
+                    .toBe(200);
+
+                expect(
+                    response.headers[
+                        "access-control-allow-origin"
+                    ]
+                ).toBe(
+                    "https://criczone.example.com"
+                );
+            }
+        );
+
+
+        it(
+            "should handle OPTIONS preflight request",
+            async () => {
+
+                const app =
+                    createCorsApp();
+
+                const response =
+                    await request(app)
+                        .options("/test")
+                        .set(
+                            "Origin",
+                            "https://criczone.example.com"
+                        )
+                        .set(
+                            "Access-Control-Request-Method",
+                            "GET"
+                        );
+
+                expect(
+                    response.status
+                ).toBe(204);
+
+                expect(
+                    response.headers[
+                        "access-control-allow-origin"
+                    ]
+                ).toBe(
+                    "https://criczone.example.com"
+                );
+
+                expect(
+                    response.headers[
+                        "access-control-allow-methods"
+                    ]
+                ).toContain("GET");
+            }
+        );
+
+
+        it(
+            "should allow configured request headers",
+            async () => {
+
+                const app =
+                    createCorsApp();
+
+                const response =
+                    await request(app)
+                        .options("/test")
+                        .set(
+                            "Origin",
+                            "https://criczone.example.com"
+                        )
+                        .set(
+                            "Access-Control-Request-Method",
+                            "GET"
+                        )
+                        .set(
+                            "Access-Control-Request-Headers",
+                            "Content-Type, Accept"
+                        );
+
+                expect(
+                    response.headers[
+                        "access-control-allow-headers"
+                    ]
+                ).toContain(
+                    "Content-Type"
+                );
+
+                expect(
+                    response.headers[
+                        "access-control-allow-headers"
+                    ]
+                ).toContain(
+                    "Accept"
+                );
+            }
+        );
+
+
+        it(
+            "should not enable credential sharing",
+            async () => {
+
+                const app =
+                    createCorsApp();
+
+                const response =
+                    await request(app)
+                        .get("/test")
+                        .set(
+                            "Origin",
+                            "https://criczone.example.com"
+                        );
+
+                expect(
+                    response.headers[
+                        "access-control-allow-credentials"
+                    ]
+                ).toBeUndefined();
+            }
+        );
+
+    });
+
+
+    // Black-box Testing — test actual HTTP/CORS semantics.
+    // SRP — GET test verifies GET behavior; preflight test verifies preflight headers.
+    // Regression Protection — validates the intended CORS contract without asserting incorrect behavior.
+    // Separation of Concerns — don't change correct production middleware to satisfy an incorrect test.
+
+
+    describe("Payload Limits", () => {
+
+        function createPayloadLimitApp() {
+
+            const logger = {
+                error: () => {}
+            };
+
+            const errorHandler =
+                createErrorHandler(logger);
+
+            const jsonErrorMiddleware =
+                new JsonErrorMiddleware();
+
+            const app = express();
+
+            // Simulates RequestIDMiddleware.
+            app.use((req, res, next) => {
+
+                req.requestId =
+                    "test-request-id";
+
+                req.traceId =
+                    "test-trace-id";
+
+                next();
+            });
+
+            app.use(
+                express.json({
+                    limit: "10kb"
                 })
+            );
 
-        expect(response.status)
-            .toBe(200)
+            app.post(
+                "/test",
+                (req, res) => {
 
-        expect(response.body)
-            .toEqual({
-                success: true,
-
-                data: {
-                    message:
-                        "CricZone"
+                    return res
+                        .status(200)
+                        .json({
+                            success: true,
+                            data: req.body
+                        });
                 }
-            })
-    })
+            );
 
+            // Converts Express JSON parser errors
+            // into CricZone AppErrors.
+            app.use(
+                jsonErrorMiddleware.handle
+            );
 
-    it("should reject JSON payload larger than 10kb", async () => {
+            // Converts AppErrors into the
+            // standard CricZone HTTP contract.
+            app.use(
+                errorHandler
+            );
 
-        const app =
-            createPayloadLimitApp()
-
-        const largePayload = {
-            data:
-                "A".repeat(
-                    11 * 1024
-                )
+            return app;
         }
 
-        const response =
-            await request(app)
-                .post("/test")
-                .send(largePayload)
 
-        expect(response.status)
-            .toBe(413)
+        it(
+            "should allow JSON payload below 10kb",
+            async () => {
 
-        expect(response.body)
-            .toEqual({
-                success: false,
+                const app =
+                    createPayloadLimitApp();
 
-                error: {
-                    code:
-                        "PAYLOAD_TOO_LARGE",
+                const response =
+                    await request(app)
+                        .post("/test")
+                        .send({
+                            message:
+                                "CricZone"
+                        });
 
-                    message:
-                        "Request payload too large",
+                expect(response.status)
+                    .toBe(200);
 
-                    requestId:
-                        "test-request-id"
-                }
-            })
-    })
-})
-//     SRP — JsonErrorMiddleware translates JSON parsing errors only.
-// Separation of Concerns — Express detects oversized bodies; middleware translates errors; global handler formats responses.
-// Middleware Pattern — security processing occurs through the HTTP pipeline.
-// OCP — additional parser-error mappings can be added without modifying controllers.
-// Black-box Integration Testing — actual CricZone middleware is tested through a real HTTP request.
+                expect(response.body)
+                    .toEqual({
+                        success: true,
 
-describe("Error Leakage", () => {
-
-    function createErrorLeakageApp() {
-
-        const logger = {
-            error: () => {}
-        }
-
-        const errorHandler =
-            createErrorHandler(logger)
-
-        const app = express()
-
-        // Simulates RequestIDMiddleware.
-        app.use((req, res, next) => {
-
-            req.requestId =
-                "test-request-id"
-
-            req.traceId =
-                "test-trace-id"
-
-            next()
-        })
-
-        app.get(
-            "/test-error",
-            (req, res, next) => {
-
-                next(
-                    new Error(
-                        "PostgreSQL password=secret123 connection failed at /server/src/database.js"
-                    )
-                )
+                        data: {
+                            message:
+                                "CricZone"
+                        }
+                    });
             }
-        )
-
-        app.use(
-            errorHandler
-        )
-
-        return app
-    }
+        );
 
 
-    it("should return generic message for unexpected errors", async () => {
+        it(
+            "should reject JSON payload larger than 10kb",
+            async () => {
 
-        const app =
-            createErrorLeakageApp()
+                const app =
+                    createPayloadLimitApp();
 
-        const response =
-            await request(app)
-                .get("/test-error")
+                const largePayload = {
+                    data:
+                        "A".repeat(
+                            11 * 1024
+                        )
+                };
 
-        expect(response.status)
-            .toBe(500)
+                const response =
+                    await request(app)
+                        .post("/test")
+                        .send(largePayload);
 
-        expect(response.body)
-            .toEqual({
-                success: false,
+                expect(response.status)
+                    .toBe(413);
 
-                error: {
-                    code:
-                        "INTERNAL_SERVER_ERROR",
+                expect(response.body)
+                    .toEqual({
+                        success: false,
 
-                    message:
-                        "Something went wrong",
+                        error: {
+                            code:
+                                "PAYLOAD_TOO_LARGE",
 
-                    requestId:
-                        "test-request-id"
+                            message:
+                                "Request payload too large",
+
+                            requestId:
+                                "test-request-id"
+                        }
+                    });
+            }
+        );
+
+    });
+
+
+    // SRP — JsonErrorMiddleware translates JSON parsing errors only.
+    // Separation of Concerns — Express detects oversized bodies; middleware translates errors; global handler formats responses.
+    // Middleware Pattern — security processing occurs through the HTTP pipeline.
+    // OCP — additional parser-error mappings can be added without modifying controllers.
+    // Black-box Integration Testing — actual CricZone middleware is tested through a real HTTP request.
+
+
+    describe("Error Leakage", () => {
+
+        function createErrorLeakageApp() {
+
+            const logger = {
+                error: () => {}
+            };
+
+            const errorHandler =
+                createErrorHandler(logger);
+
+            const app = express();
+
+            // Simulates RequestIDMiddleware.
+            app.use((req, res, next) => {
+
+                req.requestId =
+                    "test-request-id";
+
+                req.traceId =
+                    "test-trace-id";
+
+                next();
+            });
+
+            app.get(
+                "/test-error",
+                (req, res, next) => {
+
+                    next(
+                        new Error(
+                            "PostgreSQL password=secret123 connection failed at /server/src/database.js"
+                        )
+                    );
                 }
-            })
-    })
+            );
 
+            app.use(
+                errorHandler
+            );
 
-    it("should not expose internal exception message", async () => {
-
-        const app =
-            createErrorLeakageApp()
-
-        const response =
-            await request(app)
-                .get("/test-error")
-
-        const body =
-            JSON.stringify(
-                response.body
-            )
-
-        expect(body)
-            .not.toContain(
-                "PostgreSQL"
-            )
-
-        expect(body)
-            .not.toContain(
-                "secret123"
-            )
-
-        expect(body)
-            .not.toContain(
-                "database.js"
-            )
-    })
-
-
-    it("should not expose stack trace", async () => {
-
-        const app =
-            createErrorLeakageApp()
-
-        const response =
-            await request(app)
-                .get("/test-error")
-
-        expect(
-            response.body.stack
-        ).toBeUndefined()
-
-        expect(
-            response.body.error.stack
-        ).toBeUndefined()
-
-        expect(
-            JSON.stringify(
-                response.body
-            )
-        ).not.toContain(
-            "Error:"
-        )
-    })
-
-
-    it("should preserve requestId without exposing traceId", async () => {
-
-        const app =
-            createErrorLeakageApp()
-
-        const response =
-            await request(app)
-                .get("/test-error")
-
-        expect(
-            response.body.error.requestId
-        ).toBe(
-            "test-request-id"
-        )
-
-        expect(
-            response.body.error.traceId
-        ).toBeUndefined()
-    })
-
-})
-// Information Hiding — internal implementation details stay internal.
-// SRP — centralized error middleware owns HTTP error translation.
-// DI — logger is injected into the error handler.
-// DIP — error handling isn't coupled to a concrete logger.
-// Separation of Concerns — internal diagnostics and public error responses are separate.
-// Fail-safe Error Handling — unexpected exceptions become controlled generic 500 responses.
-
-describe("Production Configuration Validation", () => {
-
-    function createValidProductionEnv() {
-
-        return {
-            NODE_ENV: "production",
-            PORT: "5000",
-
-            DATABASE_URL:
-                "postgresql://user:password@db.example.com:5432/criczone",
-
-            REDIS_URL:
-                "rediss://user:password@redis.example.com:6380",
-
-            KAFKA_CLIENT_ID:
-                "criczone-production",
-
-            KAFKA_BROKERS:
-                "kafka.example.com:9093",
-
-            KAFKA_USERNAME:
-                "criczone-user",
-
-            KAFKA_PASSWORD:
-                "secure-kafka-password",
-
-            KAFKA_CA_PATH:
-                "./certs/ca.pem",
-
-            KAFKA_LIVE_CONSUMER_GROUP:
-                "criczone-live-production",
-
-            CORS_ALLOWED_ORIGINS:
-                "https://criczone.example.com"
+            return app;
         }
-    }
 
 
-    it("should accept valid production configuration", () => {
+        it(
+            "should return generic message for unexpected errors",
+            async () => {
 
-        const env =
-            createValidProductionEnv()
+                const app =
+                    createErrorLeakageApp();
 
-        const result =
-            validateEnvironment(env)
+                const response =
+                    await request(app)
+                        .get("/test-error");
 
-        expect(result.nodeEnv)
-            .toBe("production")
+                expect(response.status)
+                    .toBe(500);
 
-        expect(result.port)
-            .toBe(5000)
-    })
+                expect(response.body)
+                    .toEqual({
+                        success: false,
 
+                        error: {
+                            code:
+                                "INTERNAL_SERVER_ERROR",
 
-    it("should reject production configuration with missing required variable", () => {
+                            message:
+                                "Something went wrong",
 
-        const env =
-            createValidProductionEnv()
-
-        delete env.DATABASE_URL
-
-        expect(() =>
-            validateEnvironment(env)
-        ).toThrow()
-    })
-
-
-    it("should reject insecure Redis URL in production", () => {
-
-        const env =
-            createValidProductionEnv()
-
-        env.REDIS_URL =
-            "redis://redis.example.com:6379"
-
-        expect(() =>
-            validateEnvironment(env)
-        ).toThrow()
-    })
+                            requestId:
+                                "test-request-id"
+                        }
+                    });
+            }
+        );
 
 
-    it("should reject missing Kafka credentials in production", () => {
+        it(
+            "should not expose internal exception message",
+            async () => {
 
-        const env =
-            createValidProductionEnv()
+                const app =
+                    createErrorLeakageApp();
 
-        delete env.KAFKA_PASSWORD
+                const response =
+                    await request(app)
+                        .get("/test-error");
 
-        expect(() =>
-            validateEnvironment(env)
-        ).toThrow()
-    })
+                const body =
+                    JSON.stringify(
+                        response.body
+                    );
 
+                expect(body)
+                    .not.toContain(
+                        "PostgreSQL"
+                    );
 
-    it("should reject missing Kafka CA configuration in production", () => {
+                expect(body)
+                    .not.toContain(
+                        "secret123"
+                    );
 
-        const env =
-            createValidProductionEnv()
-
-        delete env.KAFKA_CA_PATH
-
-        expect(() =>
-            validateEnvironment(env)
-        ).toThrow()
-    })
-
-
-    it("should reject missing production CORS origins", () => {
-
-        const env =
-            createValidProductionEnv()
-
-        delete env.CORS_ALLOWED_ORIGINS
-
-        expect(() =>
-            validateEnvironment(env)
-        ).toThrow()
-    })
+                expect(body)
+                    .not.toContain(
+                        "database.js"
+                    );
+            }
+        );
 
 
-    it("should reject unsupported NODE_ENV", () => {
+        it(
+            "should not expose stack trace",
+            async () => {
 
-        const env =
-            createValidProductionEnv()
+                const app =
+                    createErrorLeakageApp();
 
-        env.NODE_ENV =
-            "invalid-environment"
+                const response =
+                    await request(app)
+                        .get("/test-error");
 
-        expect(() =>
-            validateEnvironment(env)
-        ).toThrow()
-    })
+                expect(
+                    response.body.stack
+                ).toBeUndefined();
 
-})
+                expect(
+                    response.body.error.stack
+                ).toBeUndefined();
 
-// Fail Fast — invalid production configuration prevents startup.
-// SRP — environment validation stays centralized in configuration.
-// Encapsulation — security rules are contained in the configuration validator.
-// DRY — tests exercise the real validator rather than duplicating its logic.
-// Secure by Default — insecure Redis/Kafka configuration cannot silently reach production.
-})
+                expect(
+                    JSON.stringify(
+                        response.body
+                    )
+                ).not.toContain(
+                    "Error:"
+                );
+            }
+        );
+
+
+        it(
+            "should preserve requestId without exposing traceId",
+            async () => {
+
+                const app =
+                    createErrorLeakageApp();
+
+                const response =
+                    await request(app)
+                        .get("/test-error");
+
+                expect(
+                    response.body.error.requestId
+                ).toBe(
+                    "test-request-id"
+                );
+
+                expect(
+                    response.body.error.traceId
+                ).toBeUndefined();
+            }
+        );
+
+    });
+
+
+    // Information Hiding — internal implementation details stay internal.
+    // SRP — centralized error middleware owns HTTP error translation.
+    // DI — logger is injected into the error handler.
+    // DIP — error handling isn't coupled to a concrete logger.
+    // Separation of Concerns — internal diagnostics and public error responses are separate.
+    // Fail-safe Error Handling — unexpected exceptions become controlled generic 500 responses.
+
+
+    describe("Production Configuration Validation", () => {
+
+        function createValidProductionEnv() {
+
+            return {
+                NODE_ENV: "production",
+                PORT: "5000",
+
+                DATABASE_URL:
+                    "postgresql://user:password@db.example.com:5432/criczone",
+
+                REDIS_URL:
+                    "rediss://user:password@redis.example.com:6380",
+
+                KAFKA_CLIENT_ID:
+                    "criczone-production",
+
+                KAFKA_BROKERS:
+                    "kafka.example.com:9093",
+
+                KAFKA_USERNAME:
+                    "criczone-user",
+
+                KAFKA_PASSWORD:
+                    "secure-kafka-password",
+
+                KAFKA_CA:
+                    "-----BEGIN CERTIFICATE-----\nTEST_CA_CERTIFICATE\n-----END CERTIFICATE-----",
+
+                KAFKA_LIVE_CONSUMER_GROUP:
+                    "criczone-live-production",
+
+                CORS_ALLOWED_ORIGINS:
+                    "https://criczone.example.com"
+            };
+        }
+
+
+        it(
+            "should accept valid production configuration",
+            () => {
+
+                const env =
+                    createValidProductionEnv();
+
+                const result =
+                    validateEnvironment(env);
+
+                expect(result.nodeEnv)
+                    .toBe("production");
+
+                expect(result.port)
+                    .toBe(5000);
+            }
+        );
+
+
+        it(
+            "should reject production configuration with missing required variable",
+            () => {
+
+                const env =
+                    createValidProductionEnv();
+
+                delete env.DATABASE_URL;
+
+                expect(() =>
+                    validateEnvironment(env)
+                ).toThrow();
+            }
+        );
+
+
+        it(
+            "should reject insecure Redis URL in production",
+            () => {
+
+                const env =
+                    createValidProductionEnv();
+
+                env.REDIS_URL =
+                    "redis://redis.example.com:6379";
+
+                expect(() =>
+                    validateEnvironment(env)
+                ).toThrow();
+            }
+        );
+
+
+        it(
+            "should reject missing Kafka credentials in production",
+            () => {
+
+                const env =
+                    createValidProductionEnv();
+
+                delete env.KAFKA_PASSWORD;
+
+                expect(() =>
+                    validateEnvironment(env)
+                ).toThrow();
+            }
+        );
+
+
+        it(
+            "should reject missing Kafka CA configuration in production",
+            () => {
+
+                const env =
+                    createValidProductionEnv();
+
+                delete env.KAFKA_CA;
+
+                expect(() =>
+                    validateEnvironment(env)
+                ).toThrow();
+            }
+        );
+
+
+        it(
+            "should reject missing production CORS origins",
+            () => {
+
+                const env =
+                    createValidProductionEnv();
+
+                delete env.CORS_ALLOWED_ORIGINS;
+
+                expect(() =>
+                    validateEnvironment(env)
+                ).toThrow();
+            }
+        );
+
+
+        it(
+            "should reject unsupported NODE_ENV",
+            () => {
+
+                const env =
+                    createValidProductionEnv();
+
+                env.NODE_ENV =
+                    "invalid-environment";
+
+                expect(() =>
+                    validateEnvironment(env)
+                ).toThrow();
+            }
+        );
+
+    });
+
+
+    // Fail Fast — invalid production configuration prevents startup.
+    // SRP — environment validation stays centralized in configuration.
+    // Encapsulation — security rules are contained in the configuration validator.
+    // DRY — tests exercise the real validator rather than duplicating its logic.
+    // Secure by Default — insecure Redis/Kafka configuration cannot silently reach production.
+
+});

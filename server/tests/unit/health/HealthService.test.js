@@ -15,7 +15,7 @@ describe("HealthService", () => {
 
     let databaseClient;
     let redisClient;
-    let kafkaProducer;
+    let kafkaHealthChecker;
     let healthService;
 
     beforeEach(() => {
@@ -30,18 +30,21 @@ describe("HealthService", () => {
             ping: vi.fn()
         };
 
-        kafkaProducer = {};
+        // Mock Kafka health-check abstraction
+        kafkaHealthChecker = {
+            check: vi.fn()
+        };
 
         healthService = new HealthService(
             databaseClient,
             redisClient,
-            kafkaProducer
+            kafkaHealthChecker
         );
     });
 
 
     it(
-        "should return ready when all the dependencies are healthy",
+        "should return ready when all dependencies are healthy",
         async () => {
 
             // Arrange
@@ -49,7 +52,13 @@ describe("HealthService", () => {
                 healthy: true
             });
 
-            redisClient.ping.mockResolvedValue("PONG");
+            redisClient.ping.mockResolvedValue(
+                "PONG"
+            );
+
+            kafkaHealthChecker.check.mockResolvedValue({
+                healthy: true
+            });
 
             // Act
             const result =
@@ -72,12 +81,16 @@ describe("HealthService", () => {
             expect(
                 redisClient.ping
             ).toHaveBeenCalledTimes(1);
+
+            expect(
+                kafkaHealthChecker.check
+            ).toHaveBeenCalledTimes(1);
         }
     );
 
 
     it(
-        "should return not ready when the database fails",
+        "should return not ready when database fails",
         async () => {
 
             // Arrange
@@ -85,7 +98,13 @@ describe("HealthService", () => {
                 healthy: false
             });
 
-            redisClient.ping.mockResolvedValue("PONG");
+            redisClient.ping.mockResolvedValue(
+                "PONG"
+            );
+
+            kafkaHealthChecker.check.mockResolvedValue({
+                healthy: true
+            });
 
             // Act
             const result =
@@ -104,7 +123,7 @@ describe("HealthService", () => {
 
 
     it(
-        "should return not ready when redis fails",
+        "should return not ready when Redis fails",
         async () => {
 
             // Arrange
@@ -115,6 +134,10 @@ describe("HealthService", () => {
             redisClient.ping.mockRejectedValue(
                 new Error("Redis unavailable")
             );
+
+            kafkaHealthChecker.check.mockResolvedValue({
+                healthy: true
+            });
 
             // Act
             const result =
@@ -133,7 +156,7 @@ describe("HealthService", () => {
 
 
     it(
-        "should not return ready when the Kafka Producer is missing",
+        "should return not ready when Kafka is unavailable",
         async () => {
 
             // Arrange
@@ -141,7 +164,75 @@ describe("HealthService", () => {
                 healthy: true
             });
 
-            redisClient.ping.mockResolvedValue("PONG");
+            redisClient.ping.mockResolvedValue(
+                "PONG"
+            );
+
+            kafkaHealthChecker.check.mockResolvedValue({
+                healthy: false
+            });
+
+            // Act
+            const result =
+                await healthService.checkReadiness();
+
+            // Assert
+            expect(result.ready).toBe(false);
+
+            expect(result.checks).toEqual({
+                database: true,
+                redis: true,
+                kafka: false
+            });
+        }
+    );
+
+
+    it(
+        "should return not ready when Kafka health check throws",
+        async () => {
+
+            // Arrange
+            databaseClient.healthCheck.mockResolvedValue({
+                healthy: true
+            });
+
+            redisClient.ping.mockResolvedValue(
+                "PONG"
+            );
+
+            kafkaHealthChecker.check.mockRejectedValue(
+                new Error("Kafka unavailable")
+            );
+
+            // Act
+            const result =
+                await healthService.checkReadiness();
+
+            // Assert
+            expect(result.ready).toBe(false);
+
+            expect(result.checks).toEqual({
+                database: true,
+                redis: true,
+                kafka: false
+            });
+        }
+    );
+
+
+    it(
+        "should not return ready when Kafka health checker is missing",
+        async () => {
+
+            // Arrange
+            databaseClient.healthCheck.mockResolvedValue({
+                healthy: true
+            });
+
+            redisClient.ping.mockResolvedValue(
+                "PONG"
+            );
 
             healthService = new HealthService(
                 databaseClient,
@@ -178,11 +269,9 @@ describe("HealthService", () => {
                 new Error("Redis unavailable")
             );
 
-            healthService = new HealthService(
-                databaseClient,
-                redisClient,
-                null
-            );
+            kafkaHealthChecker.check.mockResolvedValue({
+                healthy: false
+            });
 
             // Act
             const result =
@@ -201,9 +290,9 @@ describe("HealthService", () => {
     );
 });
 
-// DIP — HealthService depends on the database abstraction.
-// Encapsulation — SELECT 1 belongs inside PostgresDatabaseClient.
-// SRP — HealthService only aggregates dependency health.
-// DI — mocked dependencies are constructor-injected.
-// Test Isolation — unit tests don't connect to Neon.
-// Contract-based design — tests mock healthCheck(), the database health contract.
+// DIP — HealthService depends on injected health abstractions.
+// DI — database, Redis and Kafka health dependencies are constructor-injected.
+// SRP — HealthService only aggregates dependency readiness.
+// Test Isolation — no Neon, Valkey or Kafka connection is required.
+// Contract Testing — mocks follow each dependency's real health-check contract.
+// Failure Isolation — each dependency can fail independently.
