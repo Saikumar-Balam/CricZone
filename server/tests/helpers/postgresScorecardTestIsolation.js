@@ -49,7 +49,7 @@ export async function resetScorecardFixture(database)
 
 export async function cleanupTestEvents(database)
 {
-    if(testEventIds.length === 0)
+    if(testEventIds.size === 0)
     {
         return 
     }
