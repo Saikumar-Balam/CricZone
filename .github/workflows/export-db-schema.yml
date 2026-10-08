@@ -35,6 +35,7 @@ jobs:
 
               pg_dump \
                 --dbname="$DATABASE_URL" \
+                --schema=public \
                 --schema-only \
                 --no-owner \
                 --no-acl \
