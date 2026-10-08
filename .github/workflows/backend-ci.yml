@@ -1,3 +1,4 @@
+
 name: CricZone Backend CI
 
 on:
@@ -21,7 +22,50 @@ permissions:
 jobs:
   backend-ci:
     name: Backend CI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: criczone
+          POSTGRES_PASSWORD: criczone_ci_password
+          POSTGRES_DB: criczone_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U criczone -d criczone_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      kafka:
+        image: apache/kafka:3.9.1
+        ports:
+          - 9092:9092
+        env:
+          KAFKA_NODE_ID: "1"
+          KAFKA_PROCESS_ROLES: "broker,controller"
+          KAFKA_CONTROLLER_QUORUM_VOTERS: "1@localhost:9093"
+          KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+          KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9092"
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+          KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+          KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
 
     defaults:
       run:
@@ -41,5 +85,58 @@ jobs:
       - name: Install backend dependencies
         run: npm ci
 
+      - name: Initialize PostgreSQL schema
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: criczone
+          PGPASSWORD: criczone_ci_password
+          PGDATABASE: criczone_test
+        run: |
+          psql -v ON_ERROR_STOP=1 -f database/schema/schema.sql
+
+      - name: Initialize Kafka test topic
+        env:
+          TEST_KAFKA_BROKERS: "localhost:9092"
+          TEST_KAFKA_TOPIC: "criczone.test.live-events"
+        run: |
+          node --input-type=module <<'EOF'
+          import { Kafka } from "kafkajs";
+
+          const kafka = new Kafka({
+            clientId: "criczone-ci-topic-init",
+            brokers: process.env.TEST_KAFKA_BROKERS.split(","),
+            connectionTimeout: 10000,
+            retry: {
+              retries: 10,
+              initialRetryTime: 1000
+            }
+          });
+
+          const admin = kafka.admin();
+
+          try {
+            await admin.connect();
+
+            await admin.createTopics({
+              waitForLeaders: true,
+              topics: [{
+                topic: process.env.TEST_KAFKA_TOPIC,
+                numPartitions: 1,
+                replicationFactor: 1
+              }]
+            });
+
+            console.log("Kafka test topic initialized");
+          } finally {
+            await admin.disconnect();
+          }
+          EOF
+
       - name: Run backend tests
+        env:
+          TEST_DATABASE_URL: "postgresql://criczone:criczone_ci_password@localhost:5432/criczone_test"
+          TEST_REDIS_URL: "redis://localhost:6379"
+          TEST_KAFKA_BROKERS: "localhost:9092"
+          TEST_KAFKA_TOPIC: "criczone.test.live-events"
         run: npm test
