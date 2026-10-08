@@ -28,7 +28,8 @@ jobs:
             -v "$PWD/output:/output" \
             postgres:18 \
             sh -c '
-              export PGSSLROOTCERT=/etc/ssl/certs/ca-certificates.crt
+              export PGSSLROOTCERT=system
+
               pg_dump \
                 --dbname="$DATABASE_URL" \
                 --schema-only \
@@ -43,3 +44,4 @@ jobs:
           name: criczone-postgres-schema
           path: output/schema.sql
           retention-days: 1
+          if-no-files-found: error
