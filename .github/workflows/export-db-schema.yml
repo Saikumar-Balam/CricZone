@@ -1,0 +1,45 @@
+
+name: Export PostgreSQL Schema
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-schema:
+    name: Export Neon Test Database Schema
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Export database schema
+        env:
+          DATABASE_URL: ${{ secrets.NEON_SCHEMA_DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "NEON_SCHEMA_DATABASE_URL is missing"
+            exit 1
+          fi
+
+          mkdir -p output
+
+          pg_dump \
+            --dbname="$DATABASE_URL" \
+            --schema-only \
+            --no-owner \
+            --no-acl \
+            --file=output/schema.sql
+
+      - name: Upload schema artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: criczone-postgres-schema
+          path: output/schema.sql
+          retention-days: 1
+          if-no-files-found: error
