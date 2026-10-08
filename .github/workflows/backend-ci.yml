@@ -85,6 +85,7 @@ jobs:
       - name: Install backend dependencies
         run: npm ci
 
+      
       - name: Initialize PostgreSQL schema
         env:
           PGHOST: localhost
@@ -93,7 +94,9 @@ jobs:
           PGPASSWORD: criczone_ci_password
           PGDATABASE: criczone_test
         run: |
+          psql -v ON_ERROR_STOP=1 -c "DROP SCHEMA IF EXISTS public CASCADE;"
           psql -v ON_ERROR_STOP=1 -f database/schema/schema.sql
+
 
       - name: Initialize Kafka test topic
         env:
