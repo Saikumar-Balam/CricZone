@@ -13,12 +13,10 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Export database schema
+      - name: Export PostgreSQL 18 schema
         env:
           DATABASE_URL: ${{ secrets.NEON_SCHEMA_DATABASE_URL }}
         run: |
@@ -29,14 +27,20 @@ jobs:
 
           mkdir -p output
 
-          export PGSSLROOTCERT=system
+          docker run --rm \
+            -e DATABASE_URL \
+            -v "$PWD/output:/output" \
+            postgres:18 \
+            sh -c '
+              export PGSSLROOTCERT=/etc/ssl/certs/ca-certificates.crt
 
-          pg_dump \
-            --dbname="$DATABASE_URL" \
-            --schema-only \
-            --no-owner \
-            --no-acl \
-            --file=output/schema.sql
+              pg_dump \
+                --dbname="$DATABASE_URL" \
+                --schema-only \
+                --no-owner \
+                --no-acl \
+                --file=/output/schema.sql
+            '
 
       - name: Upload schema artifact
         uses: actions/upload-artifact@v4
