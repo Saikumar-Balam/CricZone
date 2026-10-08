@@ -8,6 +8,95 @@ export function createTestEventId() {
     return eventId
 }
 
+
+export async function ensureScorecardFixture(database) {
+    // Match 2 exists in the CI seed data.
+    // Ensure its scorecard exists.
+    await database.query(`
+        INSERT INTO scorecards (match_id)
+        SELECT 2
+        WHERE NOT EXISTS (
+            SELECT 1 FROM scorecards WHERE match_id = 2
+        )
+    `);
+
+    const scorecardResult = await database.query(`
+        SELECT id
+        FROM scorecards
+        WHERE match_id = 2
+    `);
+
+    const scorecardId = scorecardResult.rows[0]?.id;
+
+    if (!scorecardId) {
+        throw new Error("Test scorecard for match 2 is missing");
+    }
+
+    // Create the innings expected by the existing test payload.
+    await database.query(`
+        INSERT INTO innings (
+            id,
+            scorecard_id,
+            batting_team_id,
+            innings_number,
+            total_runs,
+            wickets,
+            overs,
+            extras,
+            legal_balls,
+            current_striker_id,
+            current_non_striker_id,
+            current_bowler_id
+        )
+        SELECT
+            6, $1, 1, 1,
+            42, 0, 5.2, 30, 32, 1, 2, 5
+        WHERE NOT EXISTS (
+            SELECT 1 FROM innings WHERE id = 6
+        )
+    `, [scorecardId]);
+
+    // Create striker performance.
+    await database.query(`
+        INSERT INTO batting_performances (
+            innings_id,
+            player_id,
+            runs,
+            balls_faced,
+            fours,
+            sixes,
+            strike_rate
+        )
+        SELECT 6, 1, 2, 2, 0, 0, 100
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM batting_performances
+            WHERE innings_id = 6 AND player_id = 1
+        )
+    `);
+
+    // Create bowler performance.
+    await database.query(`
+        INSERT INTO bowling_performances (
+            innings_id,
+            player_id,
+            overs,
+            maidens,
+            runs_conceded,
+            wickets,
+            economy,
+            balls_bowled
+        )
+        SELECT 6, 5, 5.2, 0, 14, 0, 2.625, 32
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM bowling_performances
+            WHERE innings_id = 6 AND player_id = 5
+        )
+    `);
+}
+
+
 export async function resetScorecardFixture(database)
 {
     // Innings baseline

@@ -1,19 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { createTestDatabase } from "../../helpers/testDatabase.js";
 import postgresScorecardRepository from "../../../src/repositories/postgres/postgresScorecardRepository.js";
-import crpyto from "crypto";
 import { createBallPayload } from "./postgresFixtures.js";
-import { createTestEventId, resetScorecardFixture, cleanupScorecardTest } from "../../helpers/postgresScorecardTestIsolation.js";
+import { createTestEventId, ensureScorecardFixture, resetScorecardFixture, cleanupScorecardTest } from "../../helpers/postgresScorecardTestIsolation.js";
 
 describe("postgresScorecardRepository Integration", () => {
   let database;
   let repository;
-   beforeAll(async () => {
-    database = createTestDatabase();
-    await database.connect();
-    repository = new postgresScorecardRepository(database);
-  });
-  beforeEach(async () => {
+   beforeEach(async () => {
     await resetScorecardFixture(database)
   })
 
@@ -21,6 +15,17 @@ describe("postgresScorecardRepository Integration", () => {
  afterEach(async () => {
     await cleanupScorecardTest(database)
   })
+   beforeAll(async () => {
+    database = createTestDatabase();
+
+    await database.connect();
+
+    await ensureScorecardFixture(database);
+
+    repository = new postgresScorecardRepository(database);
+});
+ 
+
   afterAll(async () => {
     if (database) {
       await database.disconnect();
@@ -43,12 +48,7 @@ describe("postgresScorecardRepository Integration", () => {
     expect(result.commentaryEvent).toBeDefined();
     expect(result.delivery.event_id).toBe(eventId);
   });
-afterEach(async () => {
-    await cleanupScorecardTest(database)
-})
-beforeEach(async () => {
-    await resetScorecardFixture(database)
-})
+
   it("should persist delivery correctly", async () => {
     // Arrange
     const eventId = createTestEventId()
@@ -79,12 +79,7 @@ beforeEach(async () => {
     expect(delivery.is_wicket).toBe(false)
     expect(delivery.is_legal_delivery).toBe(true)
   })
-afterEach(async () => {
-    await cleanupScorecardTest(database)
-})
-beforeEach(async () => {
-    await resetScorecardFixture(database)
-})
+
   it("should update innings correctly after recording a ball", async () => {
     // Arrange
     const eventId = createTestEventId()
@@ -115,12 +110,6 @@ beforeEach(async () => {
     expect(Number(after.legal_balls)).toBe(Number(before.legal_balls) + (payload.legalDelivery? 1 : 0))
     expect(Number(after.wickets)).toBe(Number(before.wickets) + (payload.wicket.occurred ? 1 : 0))
   })
-  afterEach(async () => {
-    await cleanupScorecardTest(database)
-  })
-beforeEach(async () => {
-    await resetScorecardFixture(database)
-})
   it("should update batting performance correctly", async () => {
     // Arrange
     const eventId = createTestEventId()
@@ -157,12 +146,6 @@ beforeEach(async () => {
     expect(Number(after.balls_faced)).toBe(Number(before.balls_faced) + (payload.legalDelivery ? 1 : 0))
     expect(Number(after.fours)).toBe(Number(before.fours) + (payload.boundary.four ? 1 : 0))
     expect(Number(after.sixes)).toBe(Number(before.sixes) + (payload.boundary.six ? 1 : 0))
-  })
-  afterEach(async () => {
-    await cleanupScorecardTest(database)
-  })
-  beforeEach(async () => {
-    await resetScorecardFixture(database)
   })
   it("should update the bowling performance correctly", async () => {
     // Arrange
@@ -214,12 +197,6 @@ beforeEach(async () => {
     expect(Number(after.runs_conceded)).toBe(expectedRunsConcedeed)
     expect(Number(after.wickets)).toBe(expectedWickets)
   })
-  afterEach(async () => {
-    await cleanupScorecardTest(database)
-  })
-beforeEach(async () => {
-    await resetScorecardFixture(database)
-})
   it("should prevent duplicate event processing", async () => {
     // Arrange
     const eventId = createTestEventId()
@@ -316,16 +293,10 @@ beforeEach(async () => {
     expect(Number(bowlingAfter.balls_bowled)).toBe(Number(bowlingBefore.balls_bowled) + (payload.legalDelivery ? 1 : 0))
     expect(Number(bowlingAfter.runs_conceded)).toBe(Number(bowlingBefore.runs_conceded) + payload.runs.total - payload.extras.bye - payload.extras.legBye)
   })
-afterEach(async () => {
-    await cleanupScorecardTest(database)
-})
-beforeEach(async () => {
-    await resetScorecardFixture(database)
-})
 
   it("should rollback transaction when recordBall falls", async () => {
     // Arrange
-    const eventId = crpyto.randomUUID()
+    const eventId = createTestEventId()
     const payload = createBallPayload()
     const inningsBeforeResult = await database.query(`
         select 
@@ -417,7 +388,4 @@ beforeEach(async () => {
         where innings_id = $1
         and player_id = $2`, [payload.inningsId, payload.bowlerId, Number(bowlingBefore.balls_bowled)])
   })
-afterEach(async () => {
-    await cleanupScorecardTest(database)
-})
 });

@@ -1,4 +1,4 @@
-import MatchRepository from "../contracts/matchRepository.js";
+import MatchRepository from "../contracts/MatchRepository.js";
 
 export default class PostgresMatchRepository extends MatchRepository {
   constructor(databaseClient) {
