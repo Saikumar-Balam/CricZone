@@ -9,19 +9,15 @@ permissions:
 
 jobs:
   export-schema:
-    name: Export Neon Test Database Schema
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Export PostgreSQL 18 schema
         env:
           DATABASE_URL: ${{ secrets.NEON_SCHEMA_DATABASE_URL }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
-            echo "NEON_SCHEMA_DATABASE_URL is missing"
+            echo "Database secret is missing"
             exit 1
           fi
 
@@ -33,7 +29,6 @@ jobs:
             postgres:18 \
             sh -c '
               export PGSSLROOTCERT=/etc/ssl/certs/ca-certificates.crt
-
               pg_dump \
                 --dbname="$DATABASE_URL" \
                 --schema-only \
@@ -42,10 +37,9 @@ jobs:
                 --file=/output/schema.sql
             '
 
-      - name: Upload schema artifact
+      - name: Upload schema
         uses: actions/upload-artifact@v4
         with:
           name: criczone-postgres-schema
           path: output/schema.sql
           retention-days: 1
-          if-no-files-found: error
