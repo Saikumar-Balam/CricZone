@@ -26,9 +26,12 @@ jobs:
           docker run --rm \
             -e DATABASE_URL \
             -v "$PWD/output:/output" \
+            -v /etc/ssl/certs:/runner-certs:ro \
             postgres:18 \
-            sh -c '
-              export PGSSLROOTCERT=system
+            sh -ec '
+              export PGSSLROOTCERT=/runner-certs/ca-certificates.crt
+
+              test -s "$PGSSLROOTCERT"
 
               pg_dump \
                 --dbname="$DATABASE_URL" \
