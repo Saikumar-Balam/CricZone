@@ -3,7 +3,7 @@ import request from "supertest"
 import express from "express"
 
 import RequestIDMiddleware
-    from "../../../src/middleware/RequestIDMiddleware.js"
+    from "../../../src/middleware/RequestIdMiddleware.js"
 import RateLimiterMiddleware from "../../../src/middleware/RateLimiterMiddleware.js"
 import MatchIdValidationMiddleware
     from "../../../src/middleware/MatchIdValidationMiddleware.js"

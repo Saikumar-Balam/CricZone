@@ -1,4 +1,4 @@
-import Cache from "./contracts/cache.js";
+import Cache from "./contracts/Cache.js";
 export default class RedisCache extends Cache
 {
     constructor(redisClient, logger)
