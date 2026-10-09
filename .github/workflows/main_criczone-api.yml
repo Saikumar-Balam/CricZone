@@ -1,32 +1,42 @@
+
 name: Build and deploy CricZone Backend to Azure
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - "CricZone Backend CI"
+    types:
+      - completed
     branches:
       - main
-  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-24.04
 
     defaults:
       run:
         working-directory: ./server
 
     steps:
-      - name: Checkout repository
+      - name: Checkout tested commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
-          cache: 'npm'
-          cache-dependency-path: './server/package-lock.json'
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ./server/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -42,14 +52,26 @@ jobs:
           if-no-files-found: error
 
   deploy:
-    runs-on: ubuntu-latest
     needs: build
+    runs-on: ubuntu-24.04
 
     permissions:
       id-token: write
       contents: read
 
     steps:
+      - name: Verify tested commit is still main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          CURRENT_SHA=$(gh api "repos/$REPOSITORY/branches/main" --jq '.commit.sha')
+          if [ "$CURRENT_SHA" != "$TESTED_SHA" ]; then
+            echo "main has advanced since CI. Skipping stale deployment."
+            exit 1
+          fi
+
       - name: Download backend artifact
         uses: actions/download-artifact@v4
         with:
@@ -64,9 +86,8 @@ jobs:
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_7EC1143036C444368A0942A72E2187CE }}
 
       - name: Deploy backend to Azure Web App
-        id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'criczone-api'
-          slot-name: 'Production'
+          app-name: criczone-api
+          slot-name: Production
           package: ./server
