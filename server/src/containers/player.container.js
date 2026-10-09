@@ -1,9 +1,9 @@
 import PlayerController from "../controllers/PlayerController.js";
-import PlayerIdValidationMiddleware from "../middleware/PlayerIdvalidationMiddleware.js";
+import PlayerIdValidationMiddleware from "../middleware/PlayerIdValidationMiddleware.js";
 import postgresPlayerRepository from "../repositories/postgres/postgresPlayerRepository.js";
 import {  createPlayerRouter } from "../routes/player.route.js";
 import PlayerService from "../services/PlayerService.js";
-import { PlayerRequestValidator } from "../validators/PlayerRequestvalidator.js";
+import { PlayerRequestValidator } from "../validators/PlayerRequestValidator.js";
 import databaseClient from "./database.container.js"
 
 const playerRepository = new postgresPlayerRepository(databaseClient)
