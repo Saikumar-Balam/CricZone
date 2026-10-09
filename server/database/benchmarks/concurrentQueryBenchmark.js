@@ -439,17 +439,62 @@ async function selectBenchmarkData() {
   );
 }
 
-async function executeReadOnlyQuery(query) {
-  return withReadOnlyTransaction(
-    async (client) => {
-      const result = await client.query(
-        query.sql,
-        query.params()
-      );
 
-      return result.rowCount;
+async function executeReadOnlyQuery(query) {
+  const totalStart = performance.now();
+
+  const connectionStart = performance.now();
+  const client = await pool.connect();
+  const connectionMs =
+    performance.now() - connectionStart;
+
+  let transactionStarted = false;
+
+  try {
+    const beginStart = performance.now();
+
+    await client.query("BEGIN READ ONLY");
+    transactionStarted = true;
+
+    const beginMs =
+      performance.now() - beginStart;
+
+    const selectStart = performance.now();
+
+    const result = await client.query(
+      query.sql,
+      query.params()
+    );
+
+    const selectMs =
+      performance.now() - selectStart;
+
+    const commitStart = performance.now();
+
+    await client.query("COMMIT");
+    transactionStarted = false;
+
+    const commitMs =
+      performance.now() - commitStart;
+
+    return {
+      rows: result.rowCount,
+      connectionMs,
+      beginMs,
+      selectMs,
+      commitMs,
+      transactionMs: beginMs + commitMs,
+      totalMs: performance.now() - totalStart,
+    };
+  } catch (error) {
+    if (transactionStarted) {
+      await client.query("ROLLBACK").catch(() => {});
     }
-  );
+
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function validateBenchmarkQueries() {
@@ -556,11 +601,33 @@ async function main() {
       const start = performance.now();
 
       try {
-        const rows =
-          await executeReadOnlyQuery(query);
+        const timing =
+  await executeReadOnlyQuery(query);
 
-        const duration =
-          performance.now() - start;
+const rows = timing.rows;
+
+const duration =
+  performance.now() - start;
+
+timingSamples.connectionMs.push(
+  timing.connectionMs
+);
+
+timingSamples.beginMs.push(
+  timing.beginMs
+);
+
+timingSamples.selectMs.push(
+  timing.selectMs
+);
+
+timingSamples.commitMs.push(
+  timing.commitMs
+);
+
+timingSamples.transactionMs.push(
+  timing.transactionMs
+);
 
         samples.push(duration);
 
@@ -670,6 +737,27 @@ async function main() {
 
       latency: summarize(samples),
     },
+    timingBreakdown: {
+  poolAcquisition: summarize(
+    timingSamples.connectionMs
+  ),
+
+  beginTransaction: summarize(
+    timingSamples.beginMs
+  ),
+
+  selectQuery: summarize(
+    timingSamples.selectMs
+  ),
+
+  commitTransaction: summarize(
+    timingSamples.commitMs
+  ),
+
+  transactionOverhead: summarize(
+    timingSamples.transactionMs
+  ),
+},
 
     pool: {
       peakConnections:
