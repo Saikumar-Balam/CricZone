@@ -1,0 +1,1 @@
+const intentionallyUnusedVariable = 123;
