@@ -1,9 +1,18 @@
 
 name: PostgreSQL Benchmark
- 
+
 on:
   workflow_dispatch:
     inputs:
+      benchmark_mode:
+        description: "PostgreSQL query execution mode"
+        required: true
+        default: "transaction"
+        type: choice
+        options:
+          - transaction
+          - single_select
+
       concurrency:
         description: "Number of concurrent query workers"
         required: true
@@ -17,13 +26,12 @@ on:
       pool_size:
         description: "Maximum PostgreSQL pool connections"
         required: true
-        default: "10"
+        default: "20"
         type: choice
         options:
           - "10"
           - "15"
           - "20"
-
 
 jobs:
   postgres-benchmark:
@@ -41,6 +49,7 @@ jobs:
 
     env:
       BENCHMARK_DATABASE_URL: ${{ secrets.BENCHMARK_DATABASE_URL }}
+      BENCHMARK_MODE: ${{ inputs.benchmark_mode }}
       BENCHMARK_CONCURRENCY: ${{ inputs.concurrency }}
       BENCHMARK_TOTAL_QUERIES: "300"
       BENCHMARK_POOL_SIZE: ${{ inputs.pool_size }}
@@ -60,12 +69,47 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify benchmark secret exists
+      - name: Verify benchmark configuration
+        shell: bash
         run: |
           if [ -z "$BENCHMARK_DATABASE_URL" ]; then
-            echo "BENCHMARK_DATABASE_URL secret is missing"
+            echo "ERROR: BENCHMARK_DATABASE_URL secret is missing"
             exit 1
           fi
+
+          if [[ "$BENCHMARK_MODE" != "transaction" &&
+                "$BENCHMARK_MODE" != "single_select" ]]; then
+            echo "ERROR: Invalid BENCHMARK_MODE"
+            exit 1
+          fi
+
+          echo "Benchmark mode: $BENCHMARK_MODE"
+          echo "Concurrency: $BENCHMARK_CONCURRENCY"
+          echo "Pool size: $BENCHMARK_POOL_SIZE"
+          echo "Total queries: $BENCHMARK_TOTAL_QUERIES"
+
+      - name: Verify read-only benchmark role
+        if: ${{ inputs.benchmark_mode == 'single_select' }}
+        shell: bash
+        run: |
+          node --input-type=module <<'EOF'
+          const databaseUrl = process.env.BENCHMARK_DATABASE_URL;
+          const parsed = new URL(databaseUrl);
+
+          if (
+            decodeURIComponent(parsed.username) !==
+            "criczone_benchmark_reader"
+          ) {
+            console.error(
+              "SAFETY ERROR: single_select requires criczone_benchmark_reader"
+            );
+            process.exit(1);
+          }
+
+          console.log(
+            "Read-only role username verified in connection URL"
+          );
+          EOF
 
       - name: Run PostgreSQL benchmark
         run: node database/benchmarks/concurrentQueryBenchmark.js
@@ -74,7 +118,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: postgres-benchmark-${{ inputs.concurrency }}-pool-${{ inputs.pool_size }}
+          name: postgres-benchmark-${{ inputs.benchmark_mode }}-${{ inputs.concurrency }}-pool-${{ inputs.pool_size }}-${{ github.run_id }}
           path: server/postgres-benchmark-results.json
           if-no-files-found: warn
           retention-days: 7

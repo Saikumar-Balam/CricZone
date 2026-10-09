@@ -30,6 +30,26 @@ const OUTPUT_FILE =
   process.env.BENCHMARK_OUTPUT_FILE ??
   "postgres-benchmark-results.json";
 
+const BENCHMARK_MODE =
+  process.env.BENCHMARK_MODE ?? "transaction";
+
+const ALLOWED_MODES = [
+  "transaction",
+  "single_select",
+];
+
+const READ_ONLY_ROLE = "criczone_benchmark_reader";
+
+const BENCHMARK_TABLES = [
+  "teams",
+  "matches",
+  "commentary_events",
+  "batting_performances",
+  "bowling_performances",
+  "players",
+  "deliveries",
+];
+
 function validateInteger(name, value, min, max) {
   if (
     !Number.isSafeInteger(value) ||
@@ -80,6 +100,12 @@ function validateConfiguration() {
   ) {
     throw new Error(
       "SSL mode must be require or verify-full"
+    );
+  }
+
+  if (!ALLOWED_MODES.includes(BENCHMARK_MODE)) {
+    throw new Error(
+      `Invalid BENCHMARK_MODE: ${BENCHMARK_MODE}`
     );
   }
 
@@ -380,7 +406,104 @@ async function verifyBenchmarkDatabase() {
 }
 
 // --------------------------------------------------
-// 8. Select populated benchmark records
+// 8. Verify benchmark role permissions
+// --------------------------------------------------
+
+async function verifyBenchmarkPermissions() {
+  await withReadOnlyTransaction(async (client) => {
+    const identity = await client.query(`
+      SELECT
+        current_user AS role_name,
+        current_setting(
+          'default_transaction_read_only'
+        ) AS default_read_only
+    `);
+
+    const { role_name, default_read_only } =
+      identity.rows[0];
+
+    if (BENCHMARK_MODE === "single_select") {
+      if (role_name !== READ_ONLY_ROLE) {
+        throw new Error(
+          `SAFETY ERROR: single_select requires ${READ_ONLY_ROLE}, connected as ${role_name}`
+        );
+      }
+
+      if (default_read_only !== "on") {
+        throw new Error(
+          "SAFETY ERROR: Default read-only transactions are not enabled"
+        );
+      }
+
+      for (const table of BENCHMARK_TABLES) {
+        const result = await client.query(
+          `
+          SELECT
+            has_table_privilege(
+              current_user, $1, 'SELECT'
+            ) AS can_select,
+
+            has_table_privilege(
+              current_user, $1, 'INSERT'
+            ) AS can_insert,
+
+            has_table_privilege(
+              current_user, $1, 'UPDATE'
+            ) AS can_update,
+
+            has_table_privilege(
+              current_user, $1, 'DELETE'
+            ) AS can_delete,
+
+            has_table_privilege(
+              current_user, $1, 'TRUNCATE'
+            ) AS can_truncate,
+
+            has_table_privilege(
+              current_user, $1, 'TRIGGER'
+            ) AS can_trigger,
+
+            has_table_privilege(
+              current_user, $1, 'REFERENCES'
+            ) AS can_reference
+          `,
+          [`public.${table}`]
+        );
+
+        const permissions = result.rows[0];
+
+        if (
+          permissions.can_select !== true ||
+          permissions.can_insert ||
+          permissions.can_update ||
+          permissions.can_delete ||
+          permissions.can_truncate ||
+          permissions.can_trigger ||
+          permissions.can_reference
+        ) {
+          throw new Error(
+            `SAFETY ERROR: Unsafe permissions on ${table}`
+          );
+        }
+      }
+
+      console.log(
+        "All benchmark table permissions verified"
+      );
+    }
+
+    console.log(
+      `Benchmark role verified: ${role_name}`
+    );
+
+    console.log(
+      `Default read-only transactions: ${default_read_only}`
+    );
+  });
+}
+
+// --------------------------------------------------
+// 9. Select populated benchmark records
 // --------------------------------------------------
 
 async function selectBenchmarkData() {
@@ -461,7 +584,7 @@ async function selectBenchmarkData() {
 }
 
 // --------------------------------------------------
-// 9. Execute query and measure latency components
+// 10. Execute benchmark query
 // --------------------------------------------------
 
 async function executeReadOnlyQuery(query) {
@@ -476,13 +599,17 @@ async function executeReadOnlyQuery(query) {
   let transactionStarted = false;
 
   try {
-    const beginStart = performance.now();
+    let beginMs = 0;
+    let commitMs = 0;
 
-    await client.query("BEGIN READ ONLY");
-    transactionStarted = true;
+    if (BENCHMARK_MODE === "transaction") {
+      const beginStart = performance.now();
 
-    const beginMs =
-      performance.now() - beginStart;
+      await client.query("BEGIN READ ONLY");
+      transactionStarted = true;
+
+      beginMs = performance.now() - beginStart;
+    }
 
     const selectStart = performance.now();
 
@@ -494,13 +621,14 @@ async function executeReadOnlyQuery(query) {
     const selectMs =
       performance.now() - selectStart;
 
-    const commitStart = performance.now();
+    if (BENCHMARK_MODE === "transaction") {
+      const commitStart = performance.now();
 
-    await client.query("COMMIT");
-    transactionStarted = false;
+      await client.query("COMMIT");
+      transactionStarted = false;
 
-    const commitMs =
-      performance.now() - commitStart;
+      commitMs = performance.now() - commitStart;
+    }
 
     return {
       rows: result.rowCount,
@@ -523,7 +651,7 @@ async function executeReadOnlyQuery(query) {
 }
 
 // --------------------------------------------------
-// 10. Validate every query before benchmarking
+// 11. Validate benchmark query results
 // --------------------------------------------------
 
 async function validateBenchmarkQueries() {
@@ -557,7 +685,54 @@ async function validateBenchmarkQueries() {
 }
 
 // --------------------------------------------------
-// 11. Run concurrent PostgreSQL benchmark
+// 12. Prewarm PostgreSQL connection pool
+// --------------------------------------------------
+
+async function prewarmConnectionPool() {
+  console.log(
+    `Prewarming PostgreSQL pool: ${POOL_SIZE} connections`
+  );
+
+  const results = await Promise.allSettled(
+    Array.from(
+      { length: POOL_SIZE },
+      () => pool.connect()
+    )
+  );
+
+  const clients = results
+    .filter(
+      (result) => result.status === "fulfilled"
+    )
+    .map((result) => result.value);
+
+  try {
+    const failure = results.find(
+      (result) => result.status === "rejected"
+    );
+
+    if (failure) {
+      throw failure.reason;
+    }
+
+    await Promise.all(
+      clients.map((client) =>
+        client.query("SELECT 1")
+      )
+    );
+
+    console.log(
+      `Pool prewarmed: ${pool.totalCount} connections`
+    );
+  } finally {
+    for (const client of clients) {
+      client.release();
+    }
+  }
+}
+
+// --------------------------------------------------
+// 13. Run concurrent PostgreSQL benchmark
 // --------------------------------------------------
 
 async function main() {
@@ -566,6 +741,7 @@ async function main() {
   );
 
   console.log({
+    mode: BENCHMARK_MODE,
     concurrency: CONCURRENCY,
     totalQueries: TOTAL_QUERIES,
     poolSize: POOL_SIZE,
@@ -575,15 +751,17 @@ async function main() {
   });
 
   await verifyBenchmarkDatabase();
+  await verifyBenchmarkPermissions();
   await selectBenchmarkData();
 
   const validation =
     await validateBenchmarkQueries();
 
+  await prewarmConnectionPool();
+
   const samples = [];
   const errors = [];
 
-  // All five latency components are declared here.
   const timingSamples = {
     connectionMs: [],
     beginMs: [],
@@ -640,7 +818,6 @@ async function main() {
 
       const start = performance.now();
 
-      // Capture waiting clients before the query.
       capturePoolStats();
 
       try {
@@ -653,6 +830,7 @@ async function main() {
           performance.now() - start;
 
         samples.push(duration);
+
         byQuery[query.name].push(duration);
 
         timingSamples.connectionMs.push(
@@ -731,7 +909,7 @@ async function main() {
   const failedQueries = errors.length;
 
   // ------------------------------------------------
-  // 12. Generate JSON benchmark report
+  // 14. Generate benchmark report
   // ------------------------------------------------
 
   const report = {
@@ -741,9 +919,11 @@ async function main() {
     startedAt,
 
     configuration: {
+      mode: BENCHMARK_MODE,
       concurrency: CONCURRENCY,
       totalQueries: TOTAL_QUERIES,
       poolSize: POOL_SIZE,
+      poolPrewarmed: true,
     },
 
     validation: {
@@ -773,7 +953,6 @@ async function main() {
 
       latency: summarize(samples),
 
-      // Timing breakdown belongs inside results.
       timingBreakdown: {
         poolAcquisition: summarize(
           timingSamples.connectionMs
@@ -841,7 +1020,9 @@ async function main() {
   }
 }
 
-
+// --------------------------------------------------
+// 15. Application entry point and cleanup
+// --------------------------------------------------
 
 try {
   await main();
