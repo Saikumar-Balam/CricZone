@@ -50,7 +50,7 @@ function validateConfiguration() {
 
   validateInteger("BENCHMARK_CONCURRENCY", CONCURRENCY, 1, 50);
   validateInteger("BENCHMARK_TOTAL_QUERIES", TOTAL_QUERIES, 1, 10000);
-  validateInteger("BENCHMARK_POOL_SIZE", POOL_SIZE, 1, 10);
+  validateInteger("BENCHMARK_POOL_SIZE", POOL_SIZE, 1, 20);
 }
 
 validateConfiguration();

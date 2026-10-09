@@ -1,18 +1,29 @@
 
 name: PostgreSQL Benchmark
-
+ 
 on:
   workflow_dispatch:
     inputs:
       concurrency:
         description: "Number of concurrent query workers"
         required: true
-        default: "10"
+        default: "50"
         type: choice
         options:
           - "10"
           - "25"
           - "50"
+
+      pool_size:
+        description: "Maximum PostgreSQL pool connections"
+        required: true
+        default: "10"
+        type: choice
+        options:
+          - "10"
+          - "15"
+          - "20"
+
 
 jobs:
   postgres-benchmark:
@@ -32,7 +43,7 @@ jobs:
       BENCHMARK_DATABASE_URL: ${{ secrets.BENCHMARK_DATABASE_URL }}
       BENCHMARK_CONCURRENCY: ${{ inputs.concurrency }}
       BENCHMARK_TOTAL_QUERIES: "300"
-      BENCHMARK_POOL_SIZE: "10"
+      BENCHMARK_POOL_SIZE: ${{ inputs.pool_size }}
       BENCHMARK_OUTPUT_FILE: "postgres-benchmark-results.json"
 
     steps:
@@ -63,7 +74,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: postgres-benchmark-${{ inputs.concurrency }}
+          name: postgres-benchmark-${{ inputs.concurrency }}-pool-${{ inputs.pool_size }}
           path: server/postgres-benchmark-results.json
           if-no-files-found: warn
           retention-days: 7
