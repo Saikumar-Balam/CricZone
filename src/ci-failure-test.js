@@ -1,1 +1,0 @@
-const intentionallyUnusedVariable = 123;
