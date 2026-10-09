@@ -6,7 +6,7 @@ import {logger} from "./logger.container.js"
 import { metrics } from "./metrics.container.js";
 import KafkaConsumerRetryStrategy from "../messaging/KafkaConsumerRetryStrategy.js";
 import RedisEventIdempotencyStore from "../messaging/RedisEventIdempotencyStore.js"
-import KafkaDeadLetterPublisher from "../messaging/kafkaDeadLetterPublisher.js";
+import KafkaDeadLetterPublisher from "../messaging/KafkaDeadLetterPublisher.js";
 import { redisClient } from "./redis.container.js";
 
 
