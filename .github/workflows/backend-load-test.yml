@@ -1,0 +1,48 @@
+
+name: CricZone Backend Load Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  load-test:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Start isolated HTTP smoke target
+        run: |
+          node -e '
+            const http = require("node:http");
+            http.createServer((req, res) => {
+              if (req.url === "/health") {
+                res.writeHead(200, {"Content-Type": "application/json"});
+                res.end(JSON.stringify({status: "ok"}));
+              } else {
+                res.writeHead(404);
+                res.end();
+              }
+            }).listen(3000, "127.0.0.1");
+          ' > /tmp/criczone-smoke.log 2>&1 &
+
+      - name: Verify smoke target
+        run: |
+          for i in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:3000/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+
+      - name: Run k6 smoke test
+        uses: grafana/k6-action@v0.3.1
+        with:
+          filename: server/load-tests/rest-api.js
+        env:
+          BASE_URL: http://127.0.0.1:3000
