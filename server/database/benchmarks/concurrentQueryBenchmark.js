@@ -5,6 +5,10 @@ import fs from "node:fs";
 
 const { Pool } = pg;
 
+// --------------------------------------------------
+// 1. Benchmark configuration and safety checks
+// --------------------------------------------------
+
 const EXPECTED_HOST =
   "ep-rapid-art-b3c25h0d-pooler.c-4.ap-southeast-1.aws.neon.tech";
 
@@ -103,6 +107,10 @@ function validateConfiguration() {
 
 validateConfiguration();
 
+// --------------------------------------------------
+// 2. PostgreSQL connection pool
+// --------------------------------------------------
+
 const pool = new Pool({
   connectionString: DATABASE_URL,
   max: POOL_SIZE,
@@ -114,13 +122,20 @@ const pool = new Pool({
   application_name: "criczone-postgres-benchmark",
 });
 
-// Selected once during setup, before timing begins.
+// --------------------------------------------------
+// 3. Benchmark dataset context
+// --------------------------------------------------
+
 const benchmarkContext = {
   commentaryMatchId: null,
   battingInningsId: null,
   bowlingInningsId: null,
   deliveryInningsId: null,
 };
+
+// --------------------------------------------------
+// 4. Representative PostgreSQL queries
+// --------------------------------------------------
 
 const QUERIES = [
   {
@@ -230,6 +245,10 @@ const QUERIES = [
   },
 ];
 
+// --------------------------------------------------
+// 5. Statistics helpers
+// --------------------------------------------------
+
 function percentile(sortedValues, p) {
   if (sortedValues.length === 0) {
     return null;
@@ -286,6 +305,10 @@ function summarize(values) {
   };
 }
 
+// --------------------------------------------------
+// 6. Read-only transaction helper for setup
+// --------------------------------------------------
+
 async function withReadOnlyTransaction(callback) {
   const client = await pool.connect();
   let transactionStarted = false;
@@ -302,9 +325,7 @@ async function withReadOnlyTransaction(callback) {
     return result;
   } catch (error) {
     if (transactionStarted) {
-      await client.query("ROLLBACK").catch(
-        () => {}
-      );
+      await client.query("ROLLBACK").catch(() => {});
     }
 
     throw error;
@@ -313,125 +334,125 @@ async function withReadOnlyTransaction(callback) {
   }
 }
 
+// --------------------------------------------------
+// 7. Verify benchmark database
+// --------------------------------------------------
+
 async function verifyBenchmarkDatabase() {
-  await withReadOnlyTransaction(
-    async (client) => {
-      const identity = await client.query(`
-        SELECT
-          current_database() AS database_name,
-          current_user AS database_user,
-          inet_server_addr()::text
-            AS server_address
-      `);
+  await withReadOnlyTransaction(async (client) => {
+    const identity = await client.query(`
+      SELECT
+        current_database() AS database_name,
+        current_user AS database_user,
+        inet_server_addr()::text AS server_address
+    `);
 
-      if (
-        identity.rows[0].database_name !==
-        "neondb"
-      ) {
-        throw new Error(
-          "Unexpected database name"
-        );
-      }
-
-      const seed = await client.query(`
-        SELECT COUNT(*)::int AS count
-        FROM teams
-        WHERE name LIKE 'BENCH_TEAM\\_%'
-      `);
-
-      if (seed.rows[0].count !== 100) {
-        throw new Error(
-          `Expected 100 benchmark teams, found ${seed.rows[0].count}`
-        );
-      }
-
-      console.log(
-        "Benchmark endpoint verified"
-      );
-
-      console.log(
-        `Database: ${identity.rows[0].database_name}`
-      );
-
-      console.log(
-        `Benchmark teams: ${seed.rows[0].count}`
+    if (
+      identity.rows[0].database_name !== "neondb"
+    ) {
+      throw new Error(
+        "Unexpected database name"
       );
     }
-  );
+
+    const seed = await client.query(`
+      SELECT COUNT(*)::int AS count
+      FROM teams
+      WHERE name LIKE 'BENCH_TEAM\\_%'
+    `);
+
+    if (seed.rows[0].count !== 100) {
+      throw new Error(
+        `Expected 100 benchmark teams, found ${seed.rows[0].count}`
+      );
+    }
+
+    console.log("Benchmark endpoint verified");
+
+    console.log(
+      `Database: ${identity.rows[0].database_name}`
+    );
+
+    console.log(
+      `Benchmark teams: ${seed.rows[0].count}`
+    );
+  });
 }
 
+// --------------------------------------------------
+// 8. Select populated benchmark records
+// --------------------------------------------------
+
 async function selectBenchmarkData() {
-  await withReadOnlyTransaction(
-    async (client) => {
-      const commentary = await client.query(`
-        SELECT match_id
-        FROM commentary_events
-        GROUP BY match_id
-        ORDER BY COUNT(*) DESC, match_id ASC
-        LIMIT 1
-      `);
+  await withReadOnlyTransaction(async (client) => {
+    const commentary = await client.query(`
+      SELECT match_id
+      FROM commentary_events
+      GROUP BY match_id
+      ORDER BY COUNT(*) DESC, match_id ASC
+      LIMIT 1
+    `);
 
-      if (commentary.rowCount === 0) {
-        throw new Error(
-          "No commentary events available"
-        );
-      }
-
-      benchmarkContext.commentaryMatchId =
-        commentary.rows[0].match_id;
-
-      const batting = await client.query(`
-        SELECT innings_id
-        FROM batting_performances
-        GROUP BY innings_id
-        ORDER BY COUNT(*) DESC, innings_id DESC
-        LIMIT 1
-      `);
-
-      if (batting.rowCount === 0) {
-        throw new Error(
-          "No batting performances available"
-        );
-      }
-
-      benchmarkContext.battingInningsId =
-        batting.rows[0].innings_id;
-
-      const bowling = await client.query(`
-        SELECT innings_id
-        FROM bowling_performances
-        GROUP BY innings_id
-        ORDER BY COUNT(*) DESC, innings_id DESC
-        LIMIT 1
-      `);
-
-      if (bowling.rowCount === 0) {
-        throw new Error(
-          "No bowling performances available"
-        );
-      }
-
-      benchmarkContext.bowlingInningsId =
-        bowling.rows[0].innings_id;
-
-      const deliveries = await client.query(`
-        SELECT innings_id
-        FROM deliveries
-        GROUP BY innings_id
-        ORDER BY COUNT(*) DESC, innings_id DESC
-        LIMIT 1
-      `);
-
-      if (deliveries.rowCount === 0) {
-        throw new Error(
-          "No deliveries available"
-        );
-      }
-
-      benchmarkContext.deliveryInningsId =
-        deliveries.rows[0].innings_id;
+    if (commentary.rowCount === 0) {
+      throw new Error(
+        "No commentary events available"
+      );
     }
-  );
+
+    benchmarkContext.commentaryMatchId =
+      commentary.rows[0].match_id;
+
+    const batting = await client.query(`
+      SELECT innings_id
+      FROM batting_performances
+      GROUP BY innings_id
+      ORDER BY COUNT(*) DESC, innings_id DESC
+      LIMIT 1
+    `);
+
+    if (batting.rowCount === 0) {
+      throw new Error(
+        "No batting performances available"
+      );
+    }
+
+    benchmarkContext.battingInningsId =
+      batting.rows[0].innings_id;
+
+    const bowling = await client.query(`
+      SELECT innings_id
+      FROM bowling_performances
+      GROUP BY innings_id
+      ORDER BY COUNT(*) DESC, innings_id DESC
+      LIMIT 1
+    `);
+
+    if (bowling.rowCount === 0) {
+      throw new Error(
+        "No bowling performances available"
+      );
+    }
+
+    benchmarkContext.bowlingInningsId =
+      bowling.rows[0].innings_id;
+
+    const deliveries = await client.query(`
+      SELECT innings_id
+      FROM deliveries
+      GROUP BY innings_id
+      ORDER BY COUNT(*) DESC, innings_id DESC
+      LIMIT 1
+    `);
+
+    if (deliveries.rowCount === 0) {
+      throw new Error(
+        "No deliveries available"
+      );
+    }
+
+    benchmarkContext.deliveryInningsId =
+      deliveries.rows[0].innings_id;
+  });
 
   console.log(
     "Selected benchmark data:",
@@ -439,12 +460,16 @@ async function selectBenchmarkData() {
   );
 }
 
+// --------------------------------------------------
+// 9. Execute query and measure latency components
+// --------------------------------------------------
 
 async function executeReadOnlyQuery(query) {
   const totalStart = performance.now();
 
   const connectionStart = performance.now();
   const client = await pool.connect();
+
   const connectionMs =
     performance.now() - connectionStart;
 
@@ -497,6 +522,10 @@ async function executeReadOnlyQuery(query) {
   }
 }
 
+// --------------------------------------------------
+// 10. Validate every query before benchmarking
+// --------------------------------------------------
+
 async function validateBenchmarkQueries() {
   console.log(
     "\nValidating benchmark query results..."
@@ -505,13 +534,11 @@ async function validateBenchmarkQueries() {
   const validation = {};
 
   for (const query of QUERIES) {
-    const rows = await executeReadOnlyQuery(
-      query
-    );
+    const { rows } = await executeReadOnlyQuery(query);
 
-    if (rows === 0) {
+    if (!Number.isInteger(rows) || rows <= 0) {
       throw new Error(
-        `Benchmark validation failed: ${query.name} returned zero rows`
+        `Benchmark validation failed: ${query.name} returned ${rows} rows`
       );
     }
 
@@ -529,6 +556,10 @@ async function validateBenchmarkQueries() {
   return validation;
 }
 
+// --------------------------------------------------
+// 11. Run concurrent PostgreSQL benchmark
+// --------------------------------------------------
+
 async function main() {
   console.log(
     "Starting CricZone PostgreSQL concurrency benchmark"
@@ -544,7 +575,6 @@ async function main() {
   });
 
   await verifyBenchmarkDatabase();
-
   await selectBenchmarkData();
 
   const validation =
@@ -553,10 +583,20 @@ async function main() {
   const samples = [];
   const errors = [];
 
+  // All five latency components are declared here.
+  const timingSamples = {
+    connectionMs: [],
+    beginMs: [],
+    selectMs: [],
+    commitMs: [],
+    transactionMs: [],
+  };
+
   const byQuery = Object.fromEntries(
-    QUERIES.map(
-      (query) => [query.name, []]
-    )
+    QUERIES.map((query) => [
+      query.name,
+      [],
+    ])
   );
 
   const rowStats = Object.fromEntries(
@@ -600,39 +640,39 @@ async function main() {
 
       const start = performance.now();
 
+      // Capture waiting clients before the query.
+      capturePoolStats();
+
       try {
         const timing =
-  await executeReadOnlyQuery(query);
+          await executeReadOnlyQuery(query);
 
-const rows = timing.rows;
+        const rows = timing.rows;
 
-const duration =
-  performance.now() - start;
-
-timingSamples.connectionMs.push(
-  timing.connectionMs
-);
-
-timingSamples.beginMs.push(
-  timing.beginMs
-);
-
-timingSamples.selectMs.push(
-  timing.selectMs
-);
-
-timingSamples.commitMs.push(
-  timing.commitMs
-);
-
-timingSamples.transactionMs.push(
-  timing.transactionMs
-);
+        const duration =
+          performance.now() - start;
 
         samples.push(duration);
+        byQuery[query.name].push(duration);
 
-        byQuery[query.name].push(
-          duration
+        timingSamples.connectionMs.push(
+          timing.connectionMs
+        );
+
+        timingSamples.beginMs.push(
+          timing.beginMs
+        );
+
+        timingSamples.selectMs.push(
+          timing.selectMs
+        );
+
+        timingSamples.commitMs.push(
+          timing.commitMs
+        );
+
+        timingSamples.transactionMs.push(
+          timing.transactionMs
         );
 
         const stats = rowStats[query.name];
@@ -674,9 +714,7 @@ timingSamples.transactionMs.push(
     }
   }
 
-  const startedAt =
-    new Date().toISOString();
-
+  const startedAt = new Date().toISOString();
   const start = performance.now();
 
   await Promise.all(
@@ -689,11 +727,12 @@ timingSamples.transactionMs.push(
   const elapsedSeconds =
     (performance.now() - start) / 1000;
 
-  const successfulQueries =
-    samples.length;
+  const successfulQueries = samples.length;
+  const failedQueries = errors.length;
 
-  const failedQueries =
-    errors.length;
+  // ------------------------------------------------
+  // 12. Generate JSON benchmark report
+  // ------------------------------------------------
 
   const report = {
     benchmark:
@@ -708,8 +747,7 @@ timingSamples.transactionMs.push(
     },
 
     validation: {
-      queryRowsBeforeBenchmark:
-        validation,
+      queryRowsBeforeBenchmark: validation,
       selectedData: benchmarkContext,
     },
 
@@ -719,8 +757,7 @@ timingSamples.transactionMs.push(
 
       errorRatePercent: Number(
         (
-          (failedQueries / TOTAL_QUERIES) *
-          100
+          (failedQueries / TOTAL_QUERIES) * 100
         ).toFixed(2)
       ),
 
@@ -730,55 +767,53 @@ timingSamples.transactionMs.push(
 
       throughputQps: Number(
         (
-          successfulQueries /
-          elapsedSeconds
+          successfulQueries / elapsedSeconds
         ).toFixed(2)
       ),
 
       latency: summarize(samples),
+
+      // Timing breakdown belongs inside results.
+      timingBreakdown: {
+        poolAcquisition: summarize(
+          timingSamples.connectionMs
+        ),
+
+        beginTransaction: summarize(
+          timingSamples.beginMs
+        ),
+
+        selectQuery: summarize(
+          timingSamples.selectMs
+        ),
+
+        commitTransaction: summarize(
+          timingSamples.commitMs
+        ),
+
+        transactionOverhead: summarize(
+          timingSamples.transactionMs
+        ),
+      },
     },
-    timingBreakdown: {
-  poolAcquisition: summarize(
-    timingSamples.connectionMs
-  ),
-
-  beginTransaction: summarize(
-    timingSamples.beginMs
-  ),
-
-  selectQuery: summarize(
-    timingSamples.selectMs
-  ),
-
-  commitTransaction: summarize(
-    timingSamples.commitMs
-  ),
-
-  transactionOverhead: summarize(
-    timingSamples.transactionMs
-  ),
-},
 
     pool: {
-      peakConnections:
-        peakPoolTotal,
-
+      peakConnections: peakPoolTotal,
       peakWaitingClientsObserved:
         peakPoolWaiting,
     },
 
-    queryBreakdown:
-      Object.fromEntries(
-        Object.entries(byQuery).map(
-          ([name, values]) => [
-            name,
-            {
-              ...summarize(values),
-              ...rowStats[name],
-            },
-          ]
-        )
-      ),
+    queryBreakdown: Object.fromEntries(
+      Object.entries(byQuery).map(
+        ([name, values]) => [
+          name,
+          {
+            ...summarize(values),
+            ...rowStats[name],
+          },
+        ]
+      )
+    ),
 
     errors: errors.slice(0, 20),
   };
@@ -805,6 +840,8 @@ timingSamples.transactionMs.push(
     process.exitCode = 1;
   }
 }
+
+
 
 try {
   await main();
