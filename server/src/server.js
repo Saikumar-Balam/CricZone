@@ -66,3 +66,4 @@ bootstrap.start().catch((error) => {
   process.exit(1);
 });
 // Composition Root 
+// CI/CD deployment verification
