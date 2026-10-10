@@ -42,7 +42,7 @@ on:
       total_operations:
         description: "Operations per workload"
         required: true
-        default: "300"
+        default: "10000"
         type: string
 
 jobs:
@@ -67,7 +67,7 @@ jobs:
           fi
 
   valkey-benchmark:
-    name: Benchmark - ${{ matrix.mode }}
+    name: Benchmark - ${{ matrix.mode }} - Run ${{ matrix.repetition }}
     needs: prepare-matrix
 
     runs-on: ubuntu-latest
@@ -80,6 +80,7 @@ jobs:
       fail-fast: false
       matrix:
         mode: ${{ fromJSON(needs.prepare-matrix.outputs.modes) }}
+        repetition: [1, 2, 3]
 
     services:
       valkey:
@@ -143,13 +144,20 @@ jobs:
           });
 
           client.on("error", error => {
-            console.error("Benchmark Valkey error:", error.message);
+            console.error(
+              "Benchmark Valkey error:",
+              error.message
+            );
           });
 
           try {
             await client.connect();
+
             await validateBenchmarkEnvironment(client);
-            console.log("Valkey benchmark safety validation passed");
+
+            console.log(
+              "Valkey benchmark safety validation passed"
+            );
           } finally {
             if (client.isOpen) {
               await client.quit();
@@ -163,6 +171,7 @@ jobs:
           echo "Mode: $BENCHMARK_MODE"
           echo "Concurrency: $BENCHMARK_CONCURRENCY"
           echo "Total operations: $BENCHMARK_TOTAL_OPERATIONS"
+          echo "Repetition: ${{ matrix.repetition }}"
 
           node benchmarks/valkey/benchmark.js
 
@@ -170,7 +179,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: valkey-${{ matrix.mode }}-${{ github.run_id }}
+          name: valkey-${{ matrix.mode }}-run-${{ matrix.repetition }}-${{ github.run_id }}
           path: server/valkey-benchmark-results.json
           if-no-files-found: warn
           retention-days: 14
