@@ -1,6 +1,5 @@
 
 import http from "node:http";
-import { performance } from "node:perf_hooks";
 import { Server } from "socket.io";
 
 import SocketConnectionHandler from "../../src/websocket/SocketConnectionHandler.js";
@@ -13,16 +12,14 @@ const PORT = Number(process.env.WS_BENCH_PORT || 4005);
 const REDIS_URL = process.env.WS_BENCH_REDIS_URL;
 
 if (!REDIS_URL) {
-    throw new Error("WS_BENCH_REDIS_URL is required");
+    throw new Error("WS_BENCH_REDIS_URL required");
 }
 
 const logger = {
     info() {},
     debug() {},
     warn() {},
-    error(message, context) {
-        console.error(message, context);
-    }
+    error: (...args) => console.error(...args)
 };
 
 const counters = new Map();
@@ -31,7 +28,11 @@ const gauges = new Map();
 const metrics = {
     incrementCounter(name, amount = 1, labels = {}) {
         const key = `${name}:${JSON.stringify(labels)}`;
-        counters.set(key, (counters.get(key) || 0) + amount);
+
+        counters.set(
+            key,
+            (counters.get(key) || 0) + amount
+        );
     },
 
     setGauge(name, value) {
@@ -39,9 +40,9 @@ const metrics = {
     }
 };
 
-const httpServer = http.createServer();
+const server = http.createServer();
 
-const io = new Server(httpServer, {
+const io = new Server(server, {
     transports: ["websocket"],
     cors: {
         origin: "*",
@@ -49,103 +50,108 @@ const io = new Server(httpServer, {
     }
 });
 
-const factory = new SocketIOAdapterClientFactory(
-    REDIS_URL,
-    logger,
-    metrics
-);
-
 let pubClient;
 let subClient;
-let shuttingDown = false;
+let closing = false;
 
-const startedAt = performance.now();
-
-function sendJSON(res, status, data) {
+function send(res, status, data) {
     res.writeHead(status, {
-        "Content-Type": "application/json"
+        "content-type": "application/json"
     });
+
     res.end(JSON.stringify(data));
 }
 
-async function readJSON(req) {
-    let body = "";
-    let bytes = 0;
+async function readBody(req) {
+    const chunks = [];
+    let size = 0;
 
     for await (const chunk of req) {
-        bytes += chunk.length;
+        size += chunk.length;
 
-        if (bytes > 64 * 1024) {
-            const error = new Error("Request body too large");
-            error.statusCode = 413;
-            throw error;
+        if (size > 65536) {
+            throw Object.assign(
+                new Error("body too large"),
+                { status: 413 }
+            );
         }
 
-        body += chunk.toString();
+        chunks.push(chunk);
     }
 
     try {
-        return JSON.parse(body);
+        return JSON.parse(
+            Buffer.concat(chunks).toString()
+        );
     } catch {
-        const error = new Error("Invalid JSON");
-        error.statusCode = 400;
-        throw error;
+        throw Object.assign(
+            new Error("invalid JSON"),
+            { status: 400 }
+        );
     }
 }
 
-httpServer.on("request", async (req, res) => {
+server.on("request", async (req, res) => {
     try {
         const url = new URL(
             req.url,
             "http://127.0.0.1"
         );
 
-        if (req.method === "GET" && url.pathname === "/health") {
-            return sendJSON(res, 200, {
-                status: "ok",
+        if (
+            req.method === "GET" &&
+            url.pathname === "/health"
+        ) {
+            return send(res, 200, {
+                ok: true,
+                port: PORT,
                 clients: io.engine.clientsCount
             });
         }
 
-        if (req.method === "GET" && url.pathname === "/rooms") {
-            const matchId = url.searchParams.get("matchId");
+        if (
+            req.method === "GET" &&
+            url.pathname === "/rooms"
+        ) {
+            const matchId =
+                url.searchParams.get("matchId");
 
             if (!matchId?.trim()) {
-                return sendJSON(res, 400, {
-                    error: "matchId is required"
+                return send(res, 400, {
+                    error: "matchId required"
                 });
             }
 
             const room = WebSocketRooms.match(matchId);
-            const members = io.sockets.adapter.rooms.get(room);
 
-            return sendJSON(res, 200, {
+            return send(res, 200, {
                 matchId,
-                room,
-                members: members?.size ?? 0
+                members:
+                    io.sockets.adapter.rooms.get(room)?.size || 0
             });
         }
 
-        if (req.method === "GET" && url.pathname === "/stats") {
-            const memory = process.memoryUsage();
-
-            return sendJSON(res, 200, {
-                connectedClients: io.engine.clientsCount,
-                uptimeMs: performance.now() - startedAt,
-                memory: {
-                    rssBytes: memory.rss,
-                    heapUsedBytes: memory.heapUsed,
-                    heapTotalBytes: memory.heapTotal
-                },
+        if (
+            req.method === "GET" &&
+            url.pathname === "/stats"
+        ) {
+            return send(res, 200, {
+                clients: io.engine.clientsCount,
+                memory: process.memoryUsage(),
                 counters: Object.fromEntries(counters),
                 gauges: Object.fromEntries(gauges)
             });
         }
 
-        if (req.method === "POST" && url.pathname === "/emit") {
-            const data = await readJSON(req);
-
-            const { matchId, eventId, payload } = data;
+        if (
+            req.method === "POST" &&
+            url.pathname === "/emit"
+        ) {
+            const {
+                matchId,
+                eventId,
+                payload
+            } = await readBody(req);
 
             if (
                 typeof matchId !== "string" ||
@@ -156,8 +162,8 @@ httpServer.on("request", async (req, res) => {
                 typeof payload !== "object" ||
                 Array.isArray(payload)
             ) {
-                return sendJSON(res, 400, {
-                    error: "Invalid benchmark payload"
+                return send(res, 400, {
+                    error: "invalid payload"
                 });
             }
 
@@ -180,75 +186,31 @@ httpServer.on("request", async (req, res) => {
                 }
             );
 
-            return sendJSON(res, 200, {
-                status: "emitted",
+            return send(res, 200, {
                 eventId,
                 emittedAt
             });
         }
 
-        return sendJSON(res, 404, {
-            error: "Not found"
+        return send(res, 404, {
+            error: "not found"
         });
     } catch (error) {
-        return sendJSON(
+        return send(
             res,
-            error.statusCode || 500,
+            error.status || 500,
             { error: error.message }
         );
     }
 });
 
-async function start() {
-    try {
-        const clients = await factory.create();
+async function shutdown(code = 0) {
+    if (closing) return;
 
-        pubClient = clients.pubClient;
-        subClient = clients.subClient;
-
-        new SocketIORedisAdapter(logger).attach(
-            io,
-            pubClient,
-            subClient
-        );
-
-        const handler = new SocketConnectionHandler(
-            logger,
-            metrics
-        );
-
-        io.on("connection", handler.handle);
-
-        await new Promise((resolve, reject) => {
-            httpServer.once("error", reject);
-
-            httpServer.listen(
-                PORT,
-                "127.0.0.1",
-                resolve
-            );
-        });
-
-        console.log(
-            `WebSocket benchmark server listening on 127.0.0.1:${PORT}`
-        );
-    } catch (error) {
-        console.error(
-            "WebSocket benchmark startup failed:",
-            error
-        );
-
-        await shutdown(1);
-    }
-}
-
-async function shutdown(exitCode = 0) {
-    if (shuttingDown) return;
-
-    shuttingDown = true;
+    closing = true;
 
     await new Promise(resolve => {
-        io.close(() => resolve());
+        io.close(resolve);
     });
 
     await Promise.allSettled([
@@ -256,10 +218,50 @@ async function shutdown(exitCode = 0) {
         subClient?.quit()
     ]);
 
-    process.exitCode = exitCode;
+    process.exitCode = code;
 }
 
 process.once("SIGINT", () => void shutdown());
 process.once("SIGTERM", () => void shutdown());
 
-await start();
+try {
+    const clients =
+        await new SocketIOAdapterClientFactory(
+            REDIS_URL,
+            logger,
+            metrics
+        ).create();
+
+    pubClient = clients.pubClient;
+    subClient = clients.subClient;
+
+    new SocketIORedisAdapter(logger).attach(
+        io,
+        pubClient,
+        subClient
+    );
+
+    const handler = new SocketConnectionHandler(
+        logger,
+        metrics
+    );
+
+    io.on("connection", handler.handle);
+
+    await new Promise((resolve, reject) => {
+        server.once("error", reject);
+
+        server.listen(
+            PORT,
+            "127.0.0.1",
+            resolve
+        );
+    });
+
+    console.log(
+        `WebSocket benchmark listening 127.0.0.1:${PORT}`
+    );
+} catch (error) {
+    console.error(error);
+    await shutdown(1);
+}
