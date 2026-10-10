@@ -4,22 +4,31 @@ name: Valkey Benchmark
 on:
   workflow_dispatch:
     inputs:
+      benchmark_suite:
+        description: "Select benchmark execution mode"
+        required: true
+        default: "all-workloads"
+        type: choice
+        options:
+          - all-workloads
+          - single
+
       benchmark_mode:
-        description: "Valkey benchmark workload"
+        description: "Workload for single mode"
         required: true
         default: "mixed"
         type: choice
         options:
+          - mixed
           - read
           - write
           - commentary
           - invalidation
           - ttl
-          - mixed
           - live_ball
 
       concurrency:
-        description: "Number of concurrent workers"
+        description: "Concurrent workers"
         required: true
         default: "10"
         type: choice
@@ -31,20 +40,46 @@ on:
           - "50"
 
       total_operations:
-        description: "Total benchmark operations"
+        description: "Operations per workload"
         required: true
         default: "300"
         type: string
 
 jobs:
-  valkey-benchmark:
-    name: CricZone Valkey Performance Benchmark
+  prepare-matrix:
+    name: Prepare Benchmark Matrix
     runs-on: ubuntu-latest
 
+    outputs:
+      modes: ${{ steps.configure.outputs.modes }}
+
+    steps:
+      - name: Configure workloads
+        id: configure
+        env:
+          SUITE: ${{ inputs.benchmark_suite }}
+          MODE: ${{ inputs.benchmark_mode }}
+        run: |
+          if [ "$SUITE" = "all-workloads" ]; then
+            echo 'modes=["read","write","commentary","invalidation","ttl","live_ball"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "modes=[\"$MODE\"]" >> "$GITHUB_OUTPUT"
+          fi
+
+  valkey-benchmark:
+    name: Benchmark - ${{ matrix.mode }}
+    needs: prepare-matrix
+
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     permissions:
       contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: ${{ fromJSON(needs.prepare-matrix.outputs.modes) }}
 
     services:
       valkey:
@@ -63,17 +98,15 @@ jobs:
 
     env:
       BENCHMARK_VALKEY_URL: redis://127.0.0.1:6379
-      BENCHMARK_MODE: ${{ inputs.benchmark_mode }}
+      BENCHMARK_MODE: ${{ matrix.mode }}
       BENCHMARK_CONCURRENCY: ${{ inputs.concurrency }}
       BENCHMARK_TOTAL_OPERATIONS: ${{ inputs.total_operations }}
       BENCHMARK_OUTPUT_FILE: valkey-benchmark-results.json
 
     steps:
-      # Step 1: Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Configure Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -81,11 +114,9 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
 
-      # Step 3: Install dependencies
       - name: Install dependencies
         run: npm ci
 
-      # Step 4: Validate benchmark configuration
       - name: Validate benchmark configuration
         run: |
           node --input-type=module <<'EOF'
@@ -98,7 +129,6 @@ jobs:
           console.log("Expected Valkey version:", config.expectedValkeyVersion);
           EOF
 
-      # Step 5: Validate Valkey service and safety
       - name: Validate Valkey benchmark environment
         run: |
           node --input-type=module <<'EOF'
@@ -113,20 +143,13 @@ jobs:
           });
 
           client.on("error", error => {
-            console.error(
-              "Benchmark Valkey error:",
-              error.message
-            );
+            console.error("Benchmark Valkey error:", error.message);
           });
 
           try {
             await client.connect();
-
             await validateBenchmarkEnvironment(client);
-
-            console.log(
-              "Valkey benchmark safety validation passed"
-            );
+            console.log("Valkey benchmark safety validation passed");
           } finally {
             if (client.isOpen) {
               await client.quit();
@@ -134,22 +157,20 @@ jobs:
           }
           EOF
 
-      # Step 6: Execute performance benchmark
       - name: Run Valkey performance benchmark
         run: |
-          echo "Starting CricZone Valkey performance benchmark"
+          echo "Starting CricZone Valkey benchmark"
           echo "Mode: $BENCHMARK_MODE"
           echo "Concurrency: $BENCHMARK_CONCURRENCY"
           echo "Total operations: $BENCHMARK_TOTAL_OPERATIONS"
 
           node benchmarks/valkey/benchmark.js
 
-      # Step 7: Upload benchmark report
-      - name: Upload Valkey benchmark results
+      - name: Upload benchmark results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: valkey-benchmark-${{ github.run_id }}
+          name: valkey-${{ matrix.mode }}-${{ github.run_id }}
           path: server/valkey-benchmark-results.json
           if-no-files-found: warn
           retention-days: 14
