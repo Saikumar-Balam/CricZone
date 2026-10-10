@@ -48,15 +48,38 @@ function percentile(values, p) {
   return sorted[index];
 }
 
+
 function stats(values) {
+  if (values.length === 0) {
+    return {
+      samples: 0,
+      p50Ms: null,
+      p95Ms: null,
+      p99Ms: null,
+      maxMs: null
+    };
+  }
+
+  const sorted = [...values].sort((a, b) => a - b);
+
+  const getPercentile = p => {
+    const index = Math.max(
+      0,
+      Math.ceil(sorted.length * p / 100) - 1
+    );
+
+    return sorted[index];
+  };
+
   return {
     samples: values.length,
-    p50Ms: percentile(values, 50),
-    p95Ms: percentile(values, 95),
-    p99Ms: percentile(values, 99),
-    maxMs: values.length ? Math.max(...values) : null
+    p50Ms: getPercentile(50),
+    p95Ms: getPercentile(95),
+    p99Ms: getPercentile(99),
+    maxMs: sorted[sorted.length - 1]
   };
 }
+
 
 function rate(numerator, denominator) {
   return denominator ? numerator / denominator : 0;
