@@ -3,6 +3,38 @@ name: Valkey Benchmark
 
 on:
   workflow_dispatch:
+    inputs:
+      benchmark_mode:
+        description: "Valkey benchmark workload"
+        required: true
+        default: "mixed"
+        type: choice
+        options:
+          - read
+          - write
+          - commentary
+          - invalidation
+          - ttl
+          - mixed
+          - live_ball
+
+      concurrency:
+        description: "Number of concurrent workers"
+        required: true
+        default: "10"
+        type: choice
+        options:
+          - "1"
+          - "5"
+          - "10"
+          - "25"
+          - "50"
+
+      total_operations:
+        description: "Total benchmark operations"
+        required: true
+        default: "300"
+        type: string
 
 jobs:
   valkey-benchmark:
@@ -31,6 +63,10 @@ jobs:
 
     env:
       BENCHMARK_VALKEY_URL: redis://127.0.0.1:6379
+      BENCHMARK_MODE: ${{ inputs.benchmark_mode }}
+      BENCHMARK_CONCURRENCY: ${{ inputs.concurrency }}
+      BENCHMARK_TOTAL_OPERATIONS: ${{ inputs.total_operations }}
+      BENCHMARK_OUTPUT_FILE: valkey-benchmark-results.json
 
     steps:
       # Step 1: Checkout repository
@@ -97,3 +133,23 @@ jobs:
             }
           }
           EOF
+
+      # Step 6: Execute performance benchmark
+      - name: Run Valkey performance benchmark
+        run: |
+          echo "Starting CricZone Valkey performance benchmark"
+          echo "Mode: $BENCHMARK_MODE"
+          echo "Concurrency: $BENCHMARK_CONCURRENCY"
+          echo "Total operations: $BENCHMARK_TOTAL_OPERATIONS"
+
+          node benchmarks/valkey/benchmark.js
+
+      # Step 7: Upload benchmark report
+      - name: Upload Valkey benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: valkey-benchmark-${{ github.run_id }}
+          path: server/valkey-benchmark-results.json
+          if-no-files-found: warn
+          retention-days: 14
