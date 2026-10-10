@@ -1,0 +1,160 @@
+
+name: CricZone WebSocket Benchmark
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  websocket-benchmark:
+    name: WebSocket Concurrent Client Testing
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 25
+
+    defaults:
+      run:
+        working-directory: server
+
+    services:
+      valkey:
+        image: valkey/valkey:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      WS_BENCH_REDIS_URL: redis://127.0.0.1:6379
+      WS_BENCH_PORT: "4005"
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify isolated Valkey
+        run: |
+          node --input-type=module <<'EOF'
+          import Redis from "ioredis";
+
+          const redis = new Redis(
+            process.env.WS_BENCH_REDIS_URL,
+            {
+              lazyConnect: true,
+              connectTimeout: 5000,
+              retryStrategy: () => null
+            }
+          );
+
+          try {
+            await redis.connect();
+
+            const result = await redis.ping();
+
+            if (result !== "PONG") {
+              throw new Error(`Unexpected response: ${result}`);
+            }
+
+            console.log("Isolated Valkey ready:", result);
+          } finally {
+            redis.disconnect();
+          }
+          EOF
+
+      - name: Start WebSocket benchmark server
+        run: |
+          mkdir -p benchmarks/websocket/websocket-results
+
+          node benchmarks/websocket/websocket-server.js \
+            > benchmarks/websocket/websocket-results/server.log 2>&1 &
+
+          echo $! > benchmarks/websocket/websocket-results/server.pid
+
+      - name: Wait for benchmark server readiness
+        run: |
+          node --input-type=module <<'EOF'
+          const endpoint = "http://127.0.0.1:4005/health";
+
+          let ready = false;
+
+          for (let attempt = 0; attempt < 40; attempt++) {
+            try {
+              const response = await fetch(endpoint);
+
+              if (response.ok) {
+                const result = await response.json();
+
+                console.log("WebSocket server ready:", result);
+
+                ready = true;
+                break;
+              }
+            } catch {
+              // Server may still be starting.
+            }
+
+            await new Promise(resolve =>
+              setTimeout(resolve, 500)
+            );
+          }
+
+          if (!ready) {
+            throw new Error(
+              "WebSocket benchmark server did not become ready"
+            );
+          }
+          EOF
+
+      - name: Execute WebSocket benchmark
+        run: node benchmarks/websocket/websocket-client.js
+
+      - name: Print benchmark reports
+        if: always()
+        run: |
+          if [ -d benchmarks/websocket/websocket-results ]; then
+            find benchmarks/websocket/websocket-results \
+              -name "*.json" -type f \
+              -exec sh -c 'echo "===== $1 ====="; cat "$1"' _ {} \;
+          fi
+
+      - name: Print server logs on failure
+        if: failure()
+        run: |
+          if [ -f benchmarks/websocket/websocket-results/server.log ]; then
+            tail -n 150 benchmarks/websocket/websocket-results/server.log
+          fi
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: criczone-websocket-benchmark
+          path: |
+            server/benchmarks/websocket/websocket-results/*.json
+            server/benchmarks/websocket/websocket-results/*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop benchmark server
+        if: always()
+        run: |
+          if [ -f benchmarks/websocket/websocket-results/server.pid ]; then
+            kill "$(cat benchmarks/websocket/websocket-results/server.pid)" \
+              2>/dev/null || true
+          fi
