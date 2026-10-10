@@ -33,9 +33,11 @@ jobs:
       BENCHMARK_VALKEY_URL: redis://127.0.0.1:6379
 
     steps:
+      # Step 1: Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Step 2: Configure Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -43,32 +45,52 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
 
+      # Step 3: Install dependencies
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify Valkey connection
+      # Step 4: Validate benchmark configuration
+      - name: Validate benchmark configuration
+        run: |
+          node --input-type=module <<'EOF'
+          import { loadBenchmarkConfig } from "./benchmarks/valkey/config/benchmarkConfig.js";
+
+          const config = loadBenchmarkConfig();
+
+          console.log("Benchmark configuration verified");
+          console.log("Key prefix:", config.keyPrefix);
+          console.log("Expected Valkey version:", config.expectedValkeyVersion);
+          EOF
+
+      # Step 5: Validate Valkey service and safety
+      - name: Validate Valkey benchmark environment
         run: |
           node --input-type=module <<'EOF'
           import { createClient } from "redis";
+          import { loadBenchmarkConfig } from "./benchmarks/valkey/config/benchmarkConfig.js";
+          import { validateBenchmarkEnvironment } from "./benchmarks/valkey/config/validateBenchmarkEnvironment.js";
+
+          const config = loadBenchmarkConfig();
 
           const client = createClient({
-            url: process.env.BENCHMARK_VALKEY_URL
+            url: config.connectionUrl
           });
 
           client.on("error", error => {
-            console.error("Valkey client error:", error.message);
+            console.error(
+              "Benchmark Valkey error:",
+              error.message
+            );
           });
 
           try {
             await client.connect();
 
-            const response = await client.ping();
+            await validateBenchmarkEnvironment(client);
 
-            if (response !== "PONG") {
-              throw new Error("Valkey health check failed");
-            }
-
-            console.log("Valkey benchmark connection verified");
+            console.log(
+              "Valkey benchmark safety validation passed"
+            );
           } finally {
             if (client.isOpen) {
               await client.quit();
