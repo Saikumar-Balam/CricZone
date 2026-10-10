@@ -1,0 +1,199 @@
+name: Kafka Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      benchmark_suite:
+        description: "Select benchmark execution mode"
+        required: true
+        default: "all-workloads"
+        type: choice
+        options:
+          - all-workloads
+          - single
+
+      benchmark_mode:
+        description: "Workload for single mode"
+        required: true
+        default: "end_to_end"
+        type: choice
+        options:
+          - producer_single
+          - producer_batch
+          - consumer
+          - end_to_end
+          - concurrent_producers
+          - payload_size
+          - backlog
+
+      concurrency:
+        description: "Concurrent publishing workers"
+        required: true
+        default: "10"
+        type: choice
+        options:
+          - "1"
+          - "5"
+          - "10"
+          - "25"
+
+      total_events:
+        description: "Events per workload"
+        required: true
+        default: "10000"
+        type: choice
+        options:
+          - "1000"
+          - "5000"
+          - "10000"
+
+      payload_bytes:
+        description: "Target event payload size in bytes"
+        required: true
+        default: "1024"
+        type: choice
+        options:
+          - "1024"
+          - "5120"
+          - "10240"
+
+jobs:
+  prepare-matrix:
+    name: Prepare Kafka Benchmark Matrix
+    runs-on: ubuntu-latest
+
+    outputs:
+      modes: ${{ steps.configure.outputs.modes }}
+
+    steps:
+      - name: Configure workloads
+        id: configure
+        env:
+          SUITE: ${{ inputs.benchmark_suite }}
+          MODE: ${{ inputs.benchmark_mode }}
+        run: |
+          if [ "$SUITE" = "all-workloads" ]; then
+            echo 'modes=["producer_single","producer_batch","consumer","end_to_end","concurrent_producers","payload_size","backlog"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "modes=[\"$MODE\"]" >> "$GITHUB_OUTPUT"
+          fi
+
+  kafka-benchmark:
+    name: Kafka - ${{ matrix.mode }} - Run ${{ matrix.repetition }}
+    needs: prepare-matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      max-parallel: 7
+      matrix:
+        mode: ${{ fromJSON(needs.prepare-matrix.outputs.modes) }}
+        repetition: [1, 2, 3]
+
+    defaults:
+      run:
+        working-directory: server
+
+    env:
+      BENCHMARK_KAFKA_BROKERS: 127.0.0.1:9092
+      BENCHMARK_MODE: ${{ matrix.mode }}
+      BENCHMARK_CONCURRENCY: ${{ inputs.concurrency }}
+      BENCHMARK_TOTAL_EVENTS: ${{ inputs.total_events }}
+      BENCHMARK_PAYLOAD_BYTES: ${{ inputs.payload_bytes }}
+      BENCHMARK_OUTPUT_FILE: kafka-benchmark-results.json
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start isolated Kafka broker
+        run: |
+          docker run -d \
+            --name criczone-kafka-benchmark \
+            -p 9092:9092 \
+            -e KAFKA_NODE_ID=1 \
+            -e KAFKA_PROCESS_ROLES=broker,controller \
+            -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
+            -e KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+            -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://127.0.0.1:9092 \
+            -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT \
+            -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+            -e KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT \
+            -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+            -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+            -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+            -e KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0 \
+            apache/kafka:3.9.1
+
+      - name: Wait for Kafka readiness
+        run: |
+          for attempt in $(seq 1 60); do
+            if docker exec criczone-kafka-benchmark \
+              /opt/kafka/bin/kafka-broker-api-versions.sh \
+              --bootstrap-server localhost:9092 >/dev/null 2>&1; then
+              echo "Kafka broker is ready"
+              exit 0
+            fi
+
+            echo "Waiting for Kafka ($attempt/60)..."
+            sleep 2
+          done
+
+          docker logs criczone-kafka-benchmark
+          exit 1
+
+      - name: Validate benchmark configuration
+        run: |
+          node --input-type=module <<'EOF'
+          import { loadBenchmarkConfig } from "./benchmarks/kafka/config/benchmarkConfig.js";
+
+          const config = loadBenchmarkConfig();
+
+          console.log("Kafka benchmark configuration verified");
+          console.log("Brokers:", config.brokers);
+          console.log("Events:", config.totalEvents);
+          console.log("Concurrency:", config.concurrency);
+          console.log("Payload size:", config.payloadBytes);
+          EOF
+
+      - name: Run Kafka performance benchmark
+        run: |
+          echo "Starting CricZone Kafka benchmark"
+          echo "Mode: $BENCHMARK_MODE"
+          echo "Concurrency: $BENCHMARK_CONCURRENCY"
+          echo "Events: $BENCHMARK_TOTAL_EVENTS"
+          echo "Payload bytes: $BENCHMARK_PAYLOAD_BYTES"
+          echo "Repetition: ${{ matrix.repetition }}"
+
+          node benchmarks/kafka/benchmark.js
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kafka-${{ matrix.mode }}-run-${{ matrix.repetition }}-${{ github.run_id }}
+          path: server/kafka-benchmark-results.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Show Kafka logs on failure
+        if: failure()
+        run: docker logs criczone-kafka-benchmark
+
+      - name: Stop Kafka broker
+        if: always()
+        run: docker rm -f criczone-kafka-benchmark || true
