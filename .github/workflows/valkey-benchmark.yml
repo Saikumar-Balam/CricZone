@@ -1,0 +1,77 @@
+
+name: Valkey Benchmark
+
+on:
+  workflow_dispatch:
+
+jobs:
+  valkey-benchmark:
+    name: CricZone Valkey Performance Benchmark
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+
+    services:
+      valkey:
+        image: valkey/valkey:9.1.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: server
+
+    env:
+      BENCHMARK_VALKEY_URL: redis://127.0.0.1:6379
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify Valkey connection
+        run: |
+          node --input-type=module <<'EOF'
+          import { createClient } from "redis";
+
+          const client = createClient({
+            url: process.env.BENCHMARK_VALKEY_URL
+          });
+
+          client.on("error", error => {
+            console.error("Valkey client error:", error.message);
+          });
+
+          try {
+            await client.connect();
+
+            const response = await client.ping();
+
+            if (response !== "PONG") {
+              throw new Error("Valkey health check failed");
+            }
+
+            console.log("Valkey benchmark connection verified");
+          } finally {
+            if (client.isOpen) {
+              await client.quit();
+            }
+          }
+          EOF

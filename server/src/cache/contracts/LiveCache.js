@@ -26,7 +26,7 @@ export default class LiveCache {
 
     async getRecentCommentary(matchId)
     {
-        throw new Error("getRecentMatchCommentary() must be implemented")
+        throw new Error("getRecentCommentary() must be implemented")
     }
 
     async promoteCompletedMatch(matchId)

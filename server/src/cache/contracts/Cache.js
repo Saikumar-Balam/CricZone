@@ -6,7 +6,7 @@ export default class Cache {
 
     async set(key, value, ttlSeconds)
     {
-        throw new Error("get() must be implemented")
+        throw new Error("set() must be implemented")
     }
 
     async delete(key)
