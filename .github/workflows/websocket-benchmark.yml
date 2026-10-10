@@ -8,9 +8,27 @@ permissions:
   contents: read
 
 jobs:
-  websocket:
+  websocket-benchmark:
+    name: ${{ matrix.scenario }} / Run ${{ matrix.repetition }}
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        scenario:
+          - connections-100
+          - connections-500
+          - connections-1000
+          - subscriptions
+          - broadcast
+          - multiroom
+          - sustained
+          - reconnect
+          - invalid
+          - cross-instance
+        repetition: [1, 2, 3]
 
     defaults:
       run:
@@ -30,7 +48,11 @@ jobs:
     env:
       NODE_ENV: test
       WS_BENCH_REDIS_URL: redis://127.0.0.1:6379
+      WS_BENCH_PORT: "4005"
+      WS_BENCH_SECOND_PORT: "4006"
       WS_BENCH_REPEATS: "3"
+      WS_BENCH_SCENARIO: ${{ matrix.scenario }}
+      WS_BENCH_RUN: ${{ matrix.repetition }}
 
     steps:
       - name: Checkout repository
@@ -46,7 +68,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Start two isolated Socket.IO servers
+      - name: Start isolated Socket.IO servers
         run: |
           mkdir -p benchmarks/websocket/websocket-results
 
@@ -72,9 +94,7 @@ jobs:
                   ready = true;
                   break;
                 }
-              } catch {
-                // Server may still be starting.
-              }
+              } catch {}
 
               await new Promise(resolve =>
                 setTimeout(resolve, 500)
@@ -83,33 +103,34 @@ jobs:
 
             if (!ready) {
               throw new Error(
-                `Server ${port} not ready`
+                `Benchmark server ${port} did not start`
               );
             }
 
-            console.log(`Server ${port} ready`);
+            console.log(`Benchmark server ${port} ready`);
           }
           EOF
 
-      - name: Run all WebSocket scenarios
+      - name: Run selected WebSocket benchmark
         run: node benchmarks/websocket/websocket-suite.js
 
-      - name: Show results
+      - name: Print result and server logs
         if: always()
         run: |
           if [ -f benchmarks/websocket/websocket-results/summary.json ]; then
-            node -e "const r=require('./benchmarks/websocket/websocket-results/summary.json');console.log('Passed',r.passed,'of',r.runs);for(const x of r.results)console.log(x.scenario,x.repetition,x.pass?'PASS':'FAIL',x.error||'')"
+            cat benchmarks/websocket/websocket-results/summary.json
           fi
 
           tail -n 80 benchmarks/websocket/websocket-results/server-4005.log || true
           tail -n 80 benchmarks/websocket/websocket-results/server-4006.log || true
 
-      - name: Upload all reports
+      - name: Upload benchmark report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: criczone-websocket-benchmark
+          name: websocket-${{ matrix.scenario }}-run-${{ matrix.repetition }}
           path: server/benchmarks/websocket/websocket-results/
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Stop servers
