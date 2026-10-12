@@ -1,3 +1,4 @@
+
 name: PostgreSQL Resilience Testing
 
 on:
@@ -43,6 +44,10 @@ jobs:
       DB_STATEMENT_TIMEOUT_MS: 3000
 
     steps:
+     
+      # 1. Repository and Node.js setup
+     
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -55,6 +60,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+     
+      # 2. Verify initial PostgreSQL connectivity
+     
 
       - name: Verify PostgreSQL connectivity
         run: |
@@ -79,10 +88,15 @@ jobs:
 
           try {
             await database.connect();
-            const result = await database.query("SELECT 1 AS value");
+
+            const result = await database.query(
+              "SELECT 1 AS value"
+            );
 
             if (result.rows[0]?.value !== 1) {
-              throw new Error("Unexpected PostgreSQL query result");
+              throw new Error(
+                "Unexpected PostgreSQL query result"
+              );
             }
 
             console.log("PostgreSQL connection successful");
@@ -92,13 +106,22 @@ jobs:
           }
           '
 
+     
+      # 3. Establish baseline data integrity
+     
+
       - name: Verify PostgreSQL baseline data integrity
         run: node benchmarks/resilience/postgres/postgres-baseline.js
-        
+
+     
+      # 4. Identify isolated PostgreSQL container
+     
+
       - name: Identify PostgreSQL service container
         id: postgres-container
         run: |
-          CONTAINER_ID=$(docker ps -q --filter "ancestor=postgres:16-alpine")
+          CONTAINER_ID=$(docker ps -q \
+            --filter "ancestor=postgres:16-alpine")
 
           if [ -z "$CONTAINER_ID" ]; then
             echo "PostgreSQL service container not found"
@@ -114,15 +137,23 @@ jobs:
 
           echo "container_id=$CONTAINER_ID" >> "$GITHUB_OUTPUT"
 
+          echo "PostgreSQL service container identified"
+
+     
+      # 5. Simulate PostgreSQL outage
+     
+
       - name: Simulate PostgreSQL outage
         run: |
-          docker stop --time 5 "${{ steps.postgres-container.outputs.container_id }}"
+          CONTAINER_ID="${{ steps.postgres-container.outputs.container_id }}"
 
-          echo "PostgreSQL container stopped"
+          echo "Stopping PostgreSQL service container"
+
+          docker stop --time 5 "$CONTAINER_ID"
 
           STATUS=$(docker inspect \
             --format '{{.State.Running}}' \
-            "${{ steps.postgres-container.outputs.container_id }}")
+            "$CONTAINER_ID")
 
           if [ "$STATUS" != "false" ]; then
             echo "PostgreSQL is unexpectedly still running"
@@ -131,11 +162,16 @@ jobs:
 
           echo "PostgreSQL outage confirmed"
 
-          
+     
+      # 6. Verify application failure detection
+     
+
       - name: Verify CricZone detects PostgreSQL failure
         run: node benchmarks/resilience/postgres/postgres-failure.js
 
+    
       - name: Restart PostgreSQL service
+        id: restart-postgres
         if: always() && steps.postgres-container.outputs.container_id != ''
         run: |
           CONTAINER_ID="${{ steps.postgres-container.outputs.container_id }}"
@@ -145,19 +181,23 @@ jobs:
             "$CONTAINER_ID")
 
           if [ "$STATUS" = "false" ]; then
+            echo "Restarting PostgreSQL container"
+
             docker start "$CONTAINER_ID"
+
             echo "PostgreSQL container restart requested"
           else
             echo "PostgreSQL container is already running"
           fi
 
       - name: Verify PostgreSQL application recovery
-        if: success()
+        if: success() && steps.restart-postgres.outcome == 'success'
         run: node benchmarks/resilience/postgres/postgres-recovery.js
 
       - name: Display PostgreSQL container status
         if: always()
-        run: docker ps -a --filter "ancestor=postgres:16-alpine"
- 
-      
+        run: |
+          echo "Final PostgreSQL container status:"
 
+          docker ps -a \
+            --filter "ancestor=postgres:16-alpine"
