@@ -95,7 +95,64 @@ jobs:
 
       - name: Verify PostgreSQL baseline data integrity
         run: node benchmarks/resilience/postgres/postgres-baseline.js
+        
+      - name: Identify PostgreSQL service container
+        id: postgres-container
+        run: |
+          CONTAINER_ID=$(docker ps -q --filter "ancestor=postgres:16-alpine")
+
+          if [ -z "$CONTAINER_ID" ]; then
+            echo "PostgreSQL service container not found"
+            exit 1
+          fi
+
+          COUNT=$(echo "$CONTAINER_ID" | wc -l)
+
+          if [ "$COUNT" -ne 1 ]; then
+            echo "Expected exactly one PostgreSQL container"
+            exit 1
+          fi
+
+          echo "container_id=$CONTAINER_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Simulate PostgreSQL outage
+        run: |
+          docker stop --time 5 "${{ steps.postgres-container.outputs.container_id }}"
+
+          echo "PostgreSQL container stopped"
+
+          STATUS=$(docker inspect \
+            --format '{{.State.Running}}' \
+            "${{ steps.postgres-container.outputs.container_id }}")
+
+          if [ "$STATUS" != "false" ]; then
+            echo "PostgreSQL is unexpectedly still running"
+            exit 1
+          fi
+
+          echo "PostgreSQL outage confirmed"
+
+      
+      - name: Verify CricZone detects PostgreSQL failure
+        run: node benchmarks/resilience/postgres/postgres-failure.js
+
+      - name: Restart PostgreSQL service
+        if: always() && steps.postgres-container.outputs.container_id != ''
+        run: |
+          CONTAINER_ID="${{ steps.postgres-container.outputs.container_id }}"
+
+          STATUS=$(docker inspect \
+            --format '{{.State.Running}}' \
+            "$CONTAINER_ID")
+
+          if [ "$STATUS" = "false" ]; then
+            docker start "$CONTAINER_ID"
+            echo "PostgreSQL container restart requested"
+          else
+            echo "PostgreSQL container is already running"
+          fi
 
       - name: Display PostgreSQL container status
         if: always()
         run: docker ps -a --filter "ancestor=postgres:16-alpine"
+
