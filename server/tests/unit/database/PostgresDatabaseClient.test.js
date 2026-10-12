@@ -15,7 +15,8 @@ const {
     const mockPool = {
         connect: vi.fn(),
         query: vi.fn(),
-        end: vi.fn()
+        end: vi.fn(),
+        on: vi.fn()
     }
 
     const MockPool = vi.fn(function () {
@@ -137,6 +138,23 @@ describe("PostgreSQL Pool Configuration", () => {
                 "SET statement_timeout = 10000"
             )
     })
+    
+it("should register an error listener for idle PostgreSQL pool clients", () => {
+    // Arrange
+    const config = createConfig();
+
+    // Act
+    new PostgresDatabaseClient(config);
+
+    // Assert
+    expect(mockPool.on).toHaveBeenCalledTimes(1);
+
+    expect(mockPool.on).toHaveBeenCalledWith(
+        "error",
+        expect.any(Function)
+    );
+});
+
 })
 
 
