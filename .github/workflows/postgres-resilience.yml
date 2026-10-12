@@ -93,6 +93,9 @@ jobs:
           }
           '
 
+      - name: Verify PostgreSQL baseline data integrity
+        run: node benchmarks/resilience/postgres/postgres-baseline.js
+
       - name: Display PostgreSQL container status
         if: always()
         run: docker ps -a --filter "ancestor=postgres:16-alpine"
