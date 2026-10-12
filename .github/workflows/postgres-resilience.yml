@@ -131,7 +131,7 @@ jobs:
 
           echo "PostgreSQL outage confirmed"
 
-      
+          
       - name: Verify CricZone detects PostgreSQL failure
         run: node benchmarks/resilience/postgres/postgres-failure.js
 
@@ -150,11 +150,14 @@ jobs:
           else
             echo "PostgreSQL container is already running"
           fi
-        - name: Verify PostgreSQL application recovery
-          if: success()
-          run: node benchmarks/resilience/postgres/postgres-recovery.js
+
+      - name: Verify PostgreSQL application recovery
+        if: success()
+        run: node benchmarks/resilience/postgres/postgres-recovery.js
 
       - name: Display PostgreSQL container status
         if: always()
         run: docker ps -a --filter "ancestor=postgres:16-alpine"
+ 
+      
 
