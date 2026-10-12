@@ -1,4 +1,3 @@
-
 name: PostgreSQL Resilience Testing
 
 on:
@@ -151,6 +150,9 @@ jobs:
           else
             echo "PostgreSQL container is already running"
           fi
+        - name: Verify PostgreSQL application recovery
+          if: success()
+          run: node benchmarks/resilience/postgres/postgres-recovery.js
 
       - name: Display PostgreSQL container status
         if: always()
