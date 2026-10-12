@@ -16,6 +16,8 @@ dist-ssr
 *.local
 .env.local
 !.env.example
+server/benchmarks/resilience/postgres/results/
+server/benchmarks/resilience/postgres/reports/
 
 # Editor directories and files
 .vscode/*

@@ -44,9 +44,8 @@ jobs:
       DB_STATEMENT_TIMEOUT_MS: 3000
 
     steps:
-     
+
       # 1. Repository and Node.js setup
-     
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -61,9 +60,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-     
       # 2. Verify initial PostgreSQL connectivity
-     
 
       - name: Verify PostgreSQL connectivity
         run: |
@@ -106,16 +103,12 @@ jobs:
           }
           '
 
-     
       # 3. Establish baseline data integrity
-     
 
       - name: Verify PostgreSQL baseline data integrity
         run: node benchmarks/resilience/postgres/postgres-baseline.js
 
-     
       # 4. Identify isolated PostgreSQL container
-     
 
       - name: Identify PostgreSQL service container
         id: postgres-container
@@ -139,9 +132,7 @@ jobs:
 
           echo "PostgreSQL service container identified"
 
-     
       # 5. Simulate PostgreSQL outage
-     
 
       - name: Simulate PostgreSQL outage
         run: |
@@ -162,14 +153,13 @@ jobs:
 
           echo "PostgreSQL outage confirmed"
 
-     
       # 6. Verify application failure detection
-     
 
       - name: Verify CricZone detects PostgreSQL failure
         run: node benchmarks/resilience/postgres/postgres-failure.js
 
-    
+      # 7. Restart PostgreSQL service
+
       - name: Restart PostgreSQL service
         id: restart-postgres
         if: always() && steps.postgres-container.outputs.container_id != ''
@@ -190,9 +180,30 @@ jobs:
             echo "PostgreSQL container is already running"
           fi
 
+      # 8. Verify PostgreSQL application recovery
+
       - name: Verify PostgreSQL application recovery
         if: success() && steps.restart-postgres.outcome == 'success'
         run: node benchmarks/resilience/postgres/postgres-recovery.js
+
+      # 9. Generate PostgreSQL resilience report
+
+      - name: Generate PostgreSQL resilience report
+        if: always()
+        run: node benchmarks/resilience/postgres/postgres-report.js
+
+      # 10. Upload PostgreSQL resilience report
+
+      - name: Upload PostgreSQL resilience report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-resilience-report
+          path: server/benchmarks/resilience/postgres/reports/
+          if-no-files-found: error
+          retention-days: 30
+
+      # 11. Display final PostgreSQL container status
 
       - name: Display PostgreSQL container status
         if: always()
