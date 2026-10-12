@@ -1,35 +1,40 @@
+
 import RetryStrategy from "../contracts/RetryStrategy.js";
 
-export default class PostgresRetryStrategy extends RetryStrategy{
-    constructor({maxRetries = 2, baseDelayMs=200} = {})
-    {
-        super()
-        this.maxRetries = maxRetries
-        this.baseDelayMs = baseDelayMs
+export default class PostgresRetryStrategy extends RetryStrategy {
+    constructor({ maxRetries = 2, baseDelayMs = 200 } = {}) {
+        super();
+
+        this.maxRetries = maxRetries;
+        this.baseDelayMs = baseDelayMs;
     }
 
-    async execute(operation)
-    {
+    async execute(operation) {
         let attempt = 0;
-        while(true)
-        {
+
+        while (true) {
             try {
-                return await operation()
-            }
-            catch(error)
-            {
-                if(!this.isRetryable(error) || attempt >= this.maxRetries)
-                {
-                    throw error 
+                return await operation();
+            } catch (error) {
+                if (
+                    !this.isRetryable(error) ||
+                    attempt >= this.maxRetries
+                ) {
+                    throw error;
                 }
-                attempt++
-                await this.delay(this.baseDelayMs * attempt)
+
+                attempt++;
+
+                await this.delay(
+                    this.baseDelayMs * attempt
+                );
             }
         }
     }
-    isRetryable(error)
-    {
+
+    isRetryable(error) {
         const retryableCodes = new Set([
+            // PostgreSQL connection exception class
             "08000",
             "08001",
             "08003",
@@ -37,18 +42,30 @@ export default class PostgresRetryStrategy extends RetryStrategy{
             "08006",
             "08007",
             "08P01",
+
+            // PostgreSQL shutdown / unavailable
             "57P01",
             "57P02",
-            "57P03"
-        ])
-        return retryableCodes.has(error?.code)
+            "57P03",
+
+            // Node.js transient network errors
+            "ECONNREFUSED",
+            "ECONNRESET",
+            "ETIMEDOUT",
+            "EPIPE",
+            "EHOSTUNREACH",
+            "ENETUNREACH",
+            "EAI_AGAIN"
+        ]);
+
+        return retryableCodes.has(error?.code);
     }
 
-    delay(ms)
-    {
-        return new Promise(resolve => setTimeout(resolve, ms))
+    delay(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
     }
 }
+
 
 // Strategy Pattern — retry algorithm is replaceable.
 // OCP — retry behavior can change without rewriting repositories.

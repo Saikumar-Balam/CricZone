@@ -1,0 +1,98 @@
+
+name: PostgreSQL Resilience Testing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-resilience:
+    name: PostgreSQL Failure and Recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+
+        env:
+          POSTGRES_USER: criczone_test
+          POSTGRES_PASSWORD: criczone_test
+          POSTGRES_DB: criczone_resilience
+
+        ports:
+          - 55432:5432
+
+        options: >-
+          --health-cmd "pg_isready -U criczone_test -d criczone_resilience"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: server
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://criczone_test:criczone_test@127.0.0.1:55432/criczone_resilience
+      DB_POOL_MAX: 5
+      DB_CONNECTION_TIMEOUT_MS: 1000
+      DB_IDLE_TIMEOUT_MS: 1000
+      DB_STATEMENT_TIMEOUT_MS: 3000
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify PostgreSQL connectivity
+        run: |
+          node --input-type=module -e '
+          import PostgresDatabaseClient from "./src/database/postgres/PostgresDatabaseClient.js";
+          import PostgresRetryStrategy from "./src/database/postgres/PostgresRetryStrategy.js";
+
+          const database = new PostgresDatabaseClient(
+            {
+              connectionString: process.env.DATABASE_URL,
+              ssl: false,
+              max: 5,
+              idleTimeoutMillis: 1000,
+              connectionTimeoutMillis: 1000,
+              statementTimeoutMillis: 3000
+            },
+            new PostgresRetryStrategy({
+              maxRetries: 2,
+              baseDelayMs: 200
+            })
+          );
+
+          try {
+            await database.connect();
+            const result = await database.query("SELECT 1 AS value");
+
+            if (result.rows[0]?.value !== 1) {
+              throw new Error("Unexpected PostgreSQL query result");
+            }
+
+            console.log("PostgreSQL connection successful");
+            console.log("SELECT 1 verification passed");
+          } finally {
+            await database.disconnect();
+          }
+          '
+
+      - name: Display PostgreSQL container status
+        if: always()
+        run: docker ps -a --filter "ancestor=postgres:16-alpine"
