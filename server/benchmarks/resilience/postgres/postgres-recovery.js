@@ -1,4 +1,6 @@
 
+import fs from "node:fs";
+import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -44,6 +46,7 @@ let lastError = null;
 try {
     console.log("Starting PostgreSQL recovery verification");
 
+    // 1. Poll PostgreSQL until connectivity is restored
     while (performance.now() - startTime < MAX_RECOVERY_TIME_MS) {
         attempts++;
 
@@ -73,6 +76,7 @@ try {
         );
     }
 
+    // 2. Verify PostgreSQL accepts SQL queries
     const verification = await database.query(
         "SELECT 1 AS value"
     );
@@ -85,8 +89,40 @@ try {
 
     console.log("PostgreSQL connection restored");
     console.log(`Recovery attempts: ${attempts}`);
-    console.log(`Recovery time: ${recoveryTimeMs.toFixed(2)} ms`);
+    console.log(
+        `Recovery check duration: ${recoveryTimeMs.toFixed(2)} ms`
+    );
+
+    // 3. Create results directory
+    const resultsDir = path.resolve(
+        "benchmarks/resilience/postgres/results"
+    );
+
+    fs.mkdirSync(resultsDir, {
+        recursive: true
+    });
+
+    // 4. Prepare recovery results
+    const recoveryResult = {
+        status: "PASSED",
+        connectionRestored: true,
+        recoveryAttempts: attempts,
+        recoveryCheckDurationMs: Number(
+            recoveryTimeMs.toFixed(2)
+        ),
+        timestamp: new Date().toISOString()
+    };
+
+    // 5. Save recovery.json
+    fs.writeFileSync(
+        path.join(resultsDir, "recovery.json"),
+        JSON.stringify(recoveryResult, null, 2),
+        "utf8"
+    );
+
+    console.log("Recovery results saved successfully");
     console.log("PostgreSQL recovery test PASSED");
+
 } finally {
     await database.disconnect();
 }
