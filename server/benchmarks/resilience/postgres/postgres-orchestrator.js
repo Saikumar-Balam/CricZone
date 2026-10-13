@@ -15,6 +15,7 @@ const RESULTS_DIR = path.resolve(
 const READY_FILE = path.join(RESULTS_DIR, "pool-ready.json");
 const FAILURE_FILE = path.join(RESULTS_DIR, "pool-failure.json");
 const RECOVERY_FILE = path.join(RESULTS_DIR, "pool-recovery.json");
+
 const RESTART_SIGNAL = path.join(
     RESULTS_DIR,
     "pool-restart-requested"
@@ -27,7 +28,7 @@ if (
     process.env.NODE_ENV !== "test" ||
     process.env.DATABASE_URL !== EXPECTED_DATABASE_URL ||
     process.platform !== "linux" ||
-    !process.env.GITHUB_ACTIONS
+    process.env.GITHUB_ACTIONS !== "true"
 ) {
     throw new Error(
         "PostgreSQL orchestration is restricted to isolated GitHub Actions"
@@ -42,6 +43,7 @@ if (!/^[a-f0-9]{12,64}$/.test(containerId ?? "")) {
 
 fs.mkdirSync(RESULTS_DIR, { recursive: true });
 
+// Remove stale synchronization files before starting.
 for (const file of [
     READY_FILE,
     FAILURE_FILE,
@@ -59,25 +61,71 @@ function docker(args) {
 
     if (result.error || result.status !== 0) {
         throw new Error(
-            `Docker command failed: ${result.stderr || result.error?.message}`
+            `Docker command failed: ${
+                result.stderr ||
+                result.error?.message ||
+                `Exit code ${result.status}`
+            }`
         );
     }
 
     return result.stdout.trim();
 }
 
-async function waitForFile(file, child, timeoutMs = MAX_WAIT_MS) {
+// Wait for a synchronization/result file.
+// A successful child exit is acceptable if the file exists.
+async function waitForFile(
+    file,
+    child,
+    timeoutMs = MAX_WAIT_MS
+) {
     const start = performance.now();
 
     while (performance.now() - start < timeoutMs) {
+        // Check for the result before checking child exit status.
+        if (fs.existsSync(file)) {
+            let result;
+
+            try {
+                result = JSON.parse(
+                    fs.readFileSync(file, "utf8")
+                );
+            } catch (error) {
+                throw new Error(
+                    `Invalid result file ${path.basename(file)}: ${error.message}`
+                );
+            }
+
+            if (
+                child.exitCode !== null &&
+                child.exitCode !== 0
+            ) {
+                throw new Error(
+                    `Pool test failed with exit code ${child.exitCode}`
+                );
+            }
+
+            if (child.signalCode !== null) {
+                throw new Error(
+                    `Pool test terminated by signal ${child.signalCode}`
+                );
+            }
+
+            return result;
+        }
+
+        // The child must produce the expected file before exiting.
         if (child.exitCode !== null) {
             throw new Error(
-                `Pool test exited prematurely with code ${child.exitCode}`
+                `Pool test exited before producing ${path.basename(file)}. ` +
+                `Exit code: ${child.exitCode}`
             );
         }
 
-        if (fs.existsSync(file)) {
-            return JSON.parse(fs.readFileSync(file, "utf8"));
+        if (child.signalCode !== null) {
+            throw new Error(
+                `Pool test terminated by signal ${child.signalCode}`
+            );
         }
 
         await sleep(POLL_INTERVAL_MS);
@@ -88,13 +136,16 @@ async function waitForFile(file, child, timeoutMs = MAX_WAIT_MS) {
     );
 }
 
+// Execute an existing resilience script and require success.
 function runNodeScript(filename, extraEnv = {}) {
+    const scriptPath = path.join(
+        "benchmarks/resilience/postgres",
+        filename
+    );
+
     const result = spawnSync(
         process.execPath,
-        [path.join(
-            "benchmarks/resilience/postgres",
-            filename
-        )],
+        [scriptPath],
         {
             stdio: "inherit",
             env: {
@@ -106,14 +157,76 @@ function runNodeScript(filename, extraEnv = {}) {
     );
 
     if (result.error || result.status !== 0) {
-        throw new Error(`${filename} failed`);
+        throw new Error(
+            `${filename} failed: ${
+                result.error?.message ||
+                `Exit code ${result.status}`
+            }`
+        );
     }
+}
+
+// Wait for the persistent pool process to finish.
+// A valid result file alone is not sufficient.
+async function waitForSuccessfulExit(child) {
+    const exitCode = await new Promise(
+        (resolve, reject) => {
+            if (child.exitCode !== null) {
+                resolve(child.exitCode);
+                return;
+            }
+
+            if (child.signalCode !== null) {
+                reject(
+                    new Error(
+                        `Pool process terminated by ${child.signalCode}`
+                    )
+                );
+                return;
+            }
+
+            const onExit = (code, signal) => {
+                child.removeListener("error", onError);
+
+                if (signal) {
+                    reject(
+                        new Error(
+                            `Pool process terminated by ${signal}`
+                        )
+                    );
+                    return;
+                }
+
+                resolve(code);
+            };
+
+            const onError = (error) => {
+                child.removeListener("exit", onExit);
+                reject(error);
+            };
+
+            child.once("exit", onExit);
+            child.once("error", onError);
+        }
+    );
+
+    if (exitCode !== 0) {
+        throw new Error(
+            `Pool recovery process failed with exit code ${exitCode}`
+        );
+    }
+
+    console.log(
+        "Persistent PostgreSQL pool process exited successfully"
+    );
 }
 
 let child = null;
 let postgresStopped = false;
 
 try {
+    // 1. Start persistent pool test process.
+
     console.log("Starting PostgreSQL pool recovery test");
 
     child = spawn(
@@ -130,67 +243,112 @@ try {
         }
     );
 
-    const ready = await waitForFile(READY_FILE, child);
+    // 2. Wait until the original connection pool is ready.
 
-    if (ready.status !== "READY") {
-        throw new Error("Pool initialization failed");
+    const ready = await waitForFile(
+        READY_FILE,
+        child
+    );
+
+    if (
+        ready.status !== "READY" ||
+        ready.originalPoolEstablished !== true
+    ) {
+        throw new Error(
+            "Original PostgreSQL pool initialization failed"
+        );
     }
 
     console.log("Original PostgreSQL pool is ready");
 
-    // Stop PostgreSQL while original pool remains alive
+    // 3. Stop PostgreSQL while the original pool remains alive.
 
-    docker(["stop", "--timeout", "5", containerId]);
+    console.log("Stopping PostgreSQL service container");
+
+    // Set before invoking docker stop so cleanup can recover
+    // even if the Docker command fails after stopping the DB.
     postgresStopped = true;
 
-    if (
-        docker([
-            "inspect",
-            "--format",
-            "{{.State.Running}}",
-            containerId
-        ]) !== "false"
-    ) {
-        throw new Error("PostgreSQL did not stop");
+    docker([
+        "stop",
+        "--timeout",
+        "5",
+        containerId
+    ]);
+
+    const stoppedStatus = docker([
+        "inspect",
+        "--format",
+        "{{.State.Running}}",
+        containerId
+    ]);
+
+    if (stoppedStatus !== "false") {
+        throw new Error(
+            "PostgreSQL is unexpectedly still running"
+        );
     }
 
-    const failure = await waitForFile(FAILURE_FILE, child);
+    console.log("PostgreSQL outage confirmed");
+
+    // 4. Verify the original pool detects the outage.
+
+    const failure = await waitForFile(
+        FAILURE_FILE,
+        child
+    );
 
     if (
         failure.status !== "PASSED" ||
         failure.failureDetected !== true
     ) {
-        throw new Error("Original pool failed to detect outage");
+        throw new Error(
+            "Original PostgreSQL pool failed to detect outage"
+        );
     }
 
-    console.log("Original pool detected database outage");
+    console.log(
+        "Original PostgreSQL pool detected database outage"
+    );
 
-    // Run existing failure detection test
+    // 5. Run the existing application failure detection test.
 
     runNodeScript("postgres-failure.js");
 
-    // Record restart timestamp immediately before docker start
+    // 6. Restart PostgreSQL and record the start timestamp.
 
     const restartStartedAtMs = Date.now();
 
-    postgresStopped = true;
+    console.log("Restarting PostgreSQL service container");
 
-    docker(["start", containerId]);
+    docker([
+        "start",
+        containerId
+    ]);
 
     postgresStopped = false;
 
     console.log("PostgreSQL restart requested");
 
-    fs.writeFileSync(RESTART_SIGNAL, "restart-requested");
+    // 7. Signal the persistent pool process to verify recovery.
 
-    // Verify new application connection recovery
+    fs.writeFileSync(
+        RESTART_SIGNAL,
+        "restart-requested",
+        "utf8"
+    );
 
-    runNodeScript("postgres-recovery.js", {
-        POSTGRES_RESTART_STARTED_AT_MS:
-            String(restartStartedAtMs)
-    });
+    // 8. Verify application recovery with a fresh client.
 
-    // Verify the original connection pool recovers
+    runNodeScript(
+        "postgres-recovery.js",
+        {
+            POSTGRES_RESTART_STARTED_AT_MS:
+                String(restartStartedAtMs)
+        }
+    );
+
+    // 9. Verify recovery using the original connection pool.
 
     const poolRecovery = await waitForFile(
         RECOVERY_FILE,
@@ -200,17 +358,43 @@ try {
     if (
         poolRecovery.status !== "PASSED" ||
         poolRecovery.originalPoolReused !== true ||
+        poolRecovery.failureDetected !== true ||
         poolRecovery.connectionRestored !== true
     ) {
-        throw new Error("Existing PostgreSQL pool recovery failed");
+        throw new Error(
+            "Existing PostgreSQL connection pool recovery failed"
+        );
     }
 
-    console.log("PostgreSQL existing pool recovery PASSED");
+    console.log(
+        "PostgreSQL existing connection pool recovery PASSED"
+    );
+
+    // 10. Verify the persistent pool process exits successfully.
+
+    await waitForSuccessfulExit(child);
+
+    console.log(
+        "PostgreSQL failure and recovery orchestration PASSED"
+    );
 
 } finally {
+    // 11. Restore PostgreSQL if an earlier test left it stopped.
+
     if (postgresStopped) {
         try {
-            docker(["start", containerId]);
+            console.log(
+                "Restoring PostgreSQL during cleanup"
+            );
+
+            docker([
+                "start",
+                containerId
+            ]);
+
+            console.log(
+                "PostgreSQL cleanup restart completed"
+            );
         } catch (error) {
             console.error(
                 "PostgreSQL cleanup restart failed:",
@@ -219,7 +403,14 @@ try {
         }
     }
 
-    if (child && child.exitCode === null) {
+    // 12. Stop the child only if it is still running.
+    // Successful child processes are not terminated.
+
+    if (
+        child &&
+        child.exitCode === null &&
+        child.signalCode === null
+    ) {
         child.kill("SIGTERM");
     }
 }
