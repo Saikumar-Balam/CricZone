@@ -32,6 +32,7 @@ if (
 }
 
 fs.mkdirSync(RESULTS_DIR, { recursive: true });
+fs.rmSync(INTEGRITY_FILE, { force: true });
 
 const database = new PostgresDatabaseClient({
     connectionString: process.env.DATABASE_URL,
@@ -48,7 +49,7 @@ const database = new PostgresDatabaseClient({
     )
 });
 
-let result = null;
+let result;
 
 try {
     console.log(
@@ -69,6 +70,7 @@ try {
         baseline.status !== "PASSED" ||
         baseline.recordVerified !== true ||
         typeof baseline.recordId !== "string" ||
+        baseline.recordId.length === 0 ||
         baseline.eventType !== "BALL_SCORED"
     ) {
         throw new Error(
@@ -82,9 +84,7 @@ try {
 
     const queryResult = await database.query(
         `
-        SELECT
-            id,
-            event_type
+        SELECT id, event_type
         FROM resilience_test_records
         WHERE id = $1
         `,
@@ -147,22 +147,23 @@ try {
     try {
         await database.disconnect();
     } catch (error) {
-        console.error(
-            "Database cleanup failed:",
-            error.message
-        );
-
         process.exitCode = 1;
 
-        if (result?.status === "PASSED") {
-            result.status = "FAILED";
-            result.error = `Database cleanup failed: ${error.message}`;
-        }
+        result = {
+            ...result,
+            status: "FAILED",
+            committedRecordPreserved: false,
+            error: `Database cleanup failed: ${error.message}`
+        };
     }
 
     fs.writeFileSync(
         INTEGRITY_FILE,
         JSON.stringify(result, null, 2),
         "utf8"
+    );
+
+    console.log(
+        "PostgreSQL integrity results saved"
     );
 }

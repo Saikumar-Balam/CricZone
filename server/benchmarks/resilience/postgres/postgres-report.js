@@ -2,32 +2,49 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const resultsDir = path.resolve(
-    "benchmarks/resilience/postgres/results"
+const ROOT = path.resolve(
+    "benchmarks/resilience/postgres"
 );
 
-const reportsDir = path.resolve(
-    "benchmarks/resilience/postgres/reports"
-);
+const RESULTS_DIR = path.join(ROOT, "results");
+const REPORTS_DIR = path.join(ROOT, "reports");
 
-fs.mkdirSync(reportsDir, { recursive: true });
+fs.mkdirSync(REPORTS_DIR, { recursive: true });
 
 function readResult(filename) {
-    const filePath = path.join(resultsDir, filename);
+    const filenamePath = path.join(
+        RESULTS_DIR,
+        filename
+    );
 
-    if (!fs.existsSync(filePath)) {
+    if (!fs.existsSync(filenamePath)) {
         return {
-            status: "NOT_COMPLETED",
-            error: `${filename} was not generated`
+            status: "MISSING",
+            error: `Missing result: ${filename}`
         };
     }
 
     try {
-        return JSON.parse(fs.readFileSync(filePath, "utf8"));
+        const value = JSON.parse(
+            fs.readFileSync(filenamePath, "utf8")
+        );
+
+        if (
+            !value ||
+            typeof value !== "object" ||
+            Array.isArray(value)
+        ) {
+            throw new Error(
+                "Expected a JSON object"
+            );
+        }
+
+        return value;
+
     } catch (error) {
         return {
-            status: "INVALID_RESULT",
-            error: error.message
+            status: "INVALID",
+            error: `${filename}: ${error.message}`
         };
     }
 }
@@ -36,113 +53,249 @@ const baseline = readResult("baseline.json");
 const failure = readResult("failure.json");
 const recovery = readResult("recovery.json");
 
-const allPassed = [baseline, failure, recovery]
-    .every((result) => result.status === "PASSED");
+const poolFailure = readResult(
+    "pool-failure.json"
+);
+
+const poolRecovery = readResult(
+    "pool-recovery.json"
+);
+
+const integrity = readResult(
+    "integrity.json"
+);
+
+function nonnegative(value) {
+    return (
+        typeof value === "number" &&
+        Number.isFinite(value) &&
+        value >= 0
+    );
+}
+
+function positiveInteger(value) {
+    return (
+        Number.isSafeInteger(value) &&
+        value > 0
+    );
+}
+
+function validIsoDate(value) {
+    return (
+        typeof value === "string" &&
+        Number.isFinite(Date.parse(value))
+    );
+}
+
+const checks = {
+    baseline:
+        baseline.status === "PASSED" &&
+        baseline.recordVerified === true &&
+        typeof baseline.recordId === "string" &&
+        baseline.recordId.length > 0 &&
+        baseline.eventType === "BALL_SCORED",
+
+    failureDetection:
+        failure.status === "PASSED" &&
+        failure.databaseUnhealthy === true &&
+        nonnegative(failure.detectionTimeMs),
+
+    applicationRecovery:
+        recovery.status === "PASSED" &&
+        recovery.connectionRestored === true &&
+        positiveInteger(recovery.recoveryAttempts) &&
+        nonnegative(recovery.recoveryCheckDurationMs),
+
+    restartToQueryRecovery:
+        recovery.status === "PASSED" &&
+        nonnegative(recovery.restartToQueryRecoveryMs) &&
+        validIsoDate(recovery.restartStartedAt) &&
+        validIsoDate(recovery.querySucceededAt) &&
+        Date.parse(recovery.querySucceededAt) >=
+            Date.parse(recovery.restartStartedAt) &&
+        recovery.restartToQueryRecoveryMs ===
+            Date.parse(recovery.querySucceededAt) -
+            Date.parse(recovery.restartStartedAt),
+
+    existingPoolFailureDetection:
+        poolFailure.status === "PASSED" &&
+        poolFailure.failureDetected === true,
+
+    existingPoolRecovery:
+        poolRecovery.status === "PASSED" &&
+        poolRecovery.originalPoolReused === true &&
+        poolRecovery.failureDetected === true &&
+        poolRecovery.connectionRestored === true &&
+        positiveInteger(poolRecovery.recoveryAttempts) &&
+        nonnegative(poolRecovery.recoveryDurationMs),
+
+    committedRecordIntegrity:
+        integrity.status === "PASSED" &&
+        integrity.committedRecordPreserved === true &&
+        integrity.recordId === baseline.recordId &&
+        integrity.eventType === baseline.eventType &&
+        nonnegative(integrity.verificationDurationMs)
+};
+
+const failedChecks = Object.entries(checks)
+    .filter(([, passed]) => !passed)
+    .map(([name]) => name);
+
+const metrics = {
+    failureDetectionTimeMs:
+        failure.detectionTimeMs ?? null,
+
+    recoveryAttempts:
+        recovery.recoveryAttempts ?? null,
+
+    recoveryCheckDurationMs:
+        recovery.recoveryCheckDurationMs ?? null,
+
+    restartToQueryRecoveryMs:
+        recovery.restartToQueryRecoveryMs ?? null,
+
+    existingPoolRecoveryAttempts:
+        poolRecovery.recoveryAttempts ?? null,
+
+    existingPoolRecoveryDurationMs:
+        poolRecovery.recoveryDurationMs ?? null,
+
+    integrityVerificationDurationMs:
+        integrity.verificationDurationMs ?? null
+};
 
 const report = {
-    testSuite: "CricZone PostgreSQL Failure and Recovery",
+    testSuite:
+        "CricZone PostgreSQL Failure and Recovery",
+
     generatedAt: new Date().toISOString(),
 
     environment: {
-        platform: "GitHub Actions",
+        platform:
+            process.env.GITHUB_ACTIONS === "true"
+                ? "GitHub Actions"
+                : "Local",
+
         database: "PostgreSQL 16 Alpine",
         nodeVersion: process.version,
-        workflowRunId: process.env.GITHUB_RUN_ID ?? null,
-        commitSha: process.env.GITHUB_SHA ?? null
+
+        workflowRunId:
+            process.env.GITHUB_RUN_ID ?? null,
+
+        commitSha:
+            process.env.GITHUB_SHA ?? null
     },
 
     tests: {
         baseline,
         failureDetection: failure,
-        applicationRecovery: recovery
+        applicationRecovery: recovery,
+        existingPoolFailureDetection: poolFailure,
+        existingPoolRecovery: poolRecovery,
+        committedRecordIntegrity: integrity
     },
 
-    metrics: {
-        failureDetectionTimeMs:
-            failure.detectionTimeMs ?? null,
+    metrics,
+    checks,
+    failedChecks,
 
-        recoveryAttempts:
-            recovery.recoveryAttempts ?? null,
-
-        recoveryCheckDurationMs:
-            recovery.recoveryCheckDurationMs ?? null,
-
-        restartToQueryRecoveryMs: null
-    },
-
-    limitations: [
-        "Restart-to-query recovery time was not measured",
-        "Existing connection pool recovery was not tested",
-        "Committed-record integrity after restart was not independently verified"
-    ],
-
-    overallStatus: allPassed ? "PASSED" : "INCOMPLETE_OR_FAILED"
+    overallStatus:
+        failedChecks.length === 0
+            ? "PASSED"
+            : "INCOMPLETE_OR_FAILED"
 };
 
 const jsonPath = path.join(
-    reportsDir,
+    REPORTS_DIR,
     "postgres-resilience-report.json"
+);
+
+const markdownPath = path.join(
+    REPORTS_DIR,
+    "postgres-resilience-report.md"
 );
 
 fs.writeFileSync(
     jsonPath,
-    JSON.stringify(report, null, 2)
+    JSON.stringify(report, null, 2),
+    "utf8"
 );
 
-const markdown = `# CricZone PostgreSQL Resilience Report
+const markdown = [
+    "# CricZone PostgreSQL Resilience Report",
+    "",
+    `Generated: ${report.generatedAt}`,
+    `Overall status: **${report.overallStatus}**`,
+    "",
+    "## Verification Results",
+    "",
+    "| Check | Result |",
+    "|---|---|",
 
-**Generated:** ${report.generatedAt}
+    ...Object.entries(checks).map(
+        ([name, passed]) =>
+            `| ${name} | ${passed ? "PASSED" : "FAILED"} |`
+    ),
 
-**Overall Status:** ${report.overallStatus}
+    "",
+    "## Metrics",
+    "",
+    "| Metric | Value |",
+    "|---|---|",
 
-## Environment
+    ...Object.entries(metrics).map(
+        ([name, value]) =>
+            `| ${name} | ${value ?? "Not measured"} |`
+    ),
 
-- Platform: ${report.environment.platform}
-- Database: ${report.environment.database}
-- Node.js: ${report.environment.nodeVersion}
-- Workflow Run: ${report.environment.workflowRunId ?? "N/A"}
-- Commit: ${report.environment.commitSha ?? "N/A"}
+    "",
+    "## Failed or Missing Checks",
+    "",
 
-## Test Results
+    ...(failedChecks.length
+        ? failedChecks.map(name => `- ${name}`)
+        : ["None"]),
 
-| Test | Status |
-|---|---|
-| Baseline Integrity | ${baseline.status} |
-| Failure Detection | ${failure.status} |
-| Application Recovery | ${recovery.status} |
+    ""
+].join("\n");
 
-## Measurements
-
-| Metric | Result |
-|---|---|
-| Failure Detection | ${report.metrics.failureDetectionTimeMs ?? "N/A"} ms |
-| Recovery Attempts | ${report.metrics.recoveryAttempts ?? "N/A"} |
-| Recovery Check Duration | ${report.metrics.recoveryCheckDurationMs ?? "N/A"} ms |
-| Restart-to-Query Recovery | Not measured |
-
-## Limitations
-
-${report.limitations.map((item) => `- ${item}`).join("\n")}
-
-## Conclusion
-
-${allPassed
-    ? "Baseline integrity, failure detection, and post-restart connectivity verification passed."
-    : "One or more required tests did not complete successfully."}
-`;
-
-const markdownPath = path.join(
-    reportsDir,
-    "postgres-resilience-report.md"
+fs.writeFileSync(
+    markdownPath,
+    markdown,
+    "utf8"
 );
 
-fs.writeFileSync(markdownPath, markdown);
+console.log(
+    JSON.stringify(
+        {
+            overallStatus: report.overallStatus,
+            checks,
+            failedChecks,
+            metrics
+        },
+        null,
+        2
+    )
+);
 
-console.log("PostgreSQL resilience report generated");
-console.log(`Overall status: ${report.overallStatus}`);
-console.log(`JSON report: ${jsonPath}`);
-console.log(`Markdown report: ${markdownPath}`);
+console.log(
+    `JSON report: ${jsonPath}`
+);
 
-if (!allPassed) {
+console.log(
+    `Markdown report: ${markdownPath}`
+);
+
+if (failedChecks.length > 0) {
+    console.error(
+        "PostgreSQL resilience report FAILED: " +
+        "required checks are missing or invalid"
+    );
+
     process.exitCode = 1;
+
+} else {
+    console.log(
+        "All PostgreSQL resilience report checks PASSED"
+    );
 }
