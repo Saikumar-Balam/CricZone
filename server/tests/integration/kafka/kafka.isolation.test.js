@@ -5,7 +5,6 @@ describe("Kafka Test Isolation Integration", () => {
     it("should use an isolated Kafka test topic", async () => {
         const testTopic = process.env.TEST_KAFKA_TOPIC
         expect(testTopic).toBeDefined()
-        expect(testTopic).toBeDefined()
         expect(testTopic).toBe("criczone.test.live-events")
         expect(testTopic).not.toBe("criczone.live-events")
     })
