@@ -140,7 +140,7 @@ jobs:
 
           echo "Stopping PostgreSQL service container"
 
-          docker stop --time 5 "$CONTAINER_ID"
+          docker stop --timeout 5 "$CONTAINER_ID"
 
           STATUS=$(docker inspect \
             --format '{{.State.Running}}' \
@@ -158,7 +158,7 @@ jobs:
       - name: Verify CricZone detects PostgreSQL failure
         run: node benchmarks/resilience/postgres/postgres-failure.js
 
-      # 7. Restart PostgreSQL service
+      # 7. Restart PostgreSQL and record restart timestamp
 
       - name: Restart PostgreSQL service
         id: restart-postgres
@@ -173,17 +173,29 @@ jobs:
           if [ "$STATUS" = "false" ]; then
             echo "Restarting PostgreSQL container"
 
+            RESTART_STARTED_AT_MS=$(date +%s%3N)
+
+            echo "restart_started_at_ms=$RESTART_STARTED_AT_MS" >> "$GITHUB_OUTPUT"
+
             docker start "$CONTAINER_ID"
 
             echo "PostgreSQL container restart requested"
+            echo "Restart timestamp: $RESTART_STARTED_AT_MS"
+
           else
             echo "PostgreSQL container is already running"
+
+            echo "PostgreSQL was not stopped before restart verification"
+            exit 1
           fi
 
       # 8. Verify PostgreSQL application recovery
+      # Pass restart timestamp for end-to-end timing
 
       - name: Verify PostgreSQL application recovery
         if: success() && steps.restart-postgres.outcome == 'success'
+        env:
+          POSTGRES_RESTART_STARTED_AT_MS: ${{ steps.restart-postgres.outputs.restart_started_at_ms }}
         run: node benchmarks/resilience/postgres/postgres-recovery.js
 
       # 9. Generate PostgreSQL resilience report
