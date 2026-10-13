@@ -106,7 +106,8 @@ jobs:
       # 3. Establish baseline data integrity
 
       - name: Verify PostgreSQL baseline data integrity
-        run: node benchmarks/resilience/postgres/postgres-baseline.js
+        run: |
+          node benchmarks/resilience/postgres/postgres-baseline.js
 
       # 4. Identify isolated PostgreSQL container
 
@@ -133,7 +134,8 @@ jobs:
           echo "PostgreSQL service container identified"
 
       # 5. Coordinate PostgreSQL failure and recovery
-      # Keep the original Node.js pool alive across the outage
+      # Keep the original Node.js connection pool alive
+      # throughout the database outage and restart
 
       - name: Verify PostgreSQL outage and existing pool recovery
         env:
@@ -141,13 +143,20 @@ jobs:
         run: |
           node benchmarks/resilience/postgres/postgres-orchestrator.js
 
-      # 6. Generate PostgreSQL resilience report
+      # 6. Verify committed-record integrity after PostgreSQL restart
+
+      - name: Verify PostgreSQL post-restart data integrity
+        run: |
+          node benchmarks/resilience/postgres/postgres-integrity.js
+
+      # 7. Generate PostgreSQL resilience report
 
       - name: Generate PostgreSQL resilience report
         if: always()
-        run: node benchmarks/resilience/postgres/postgres-report.js
+        run: |
+          node benchmarks/resilience/postgres/postgres-report.js
 
-      # 7. Upload PostgreSQL resilience report
+      # 8. Upload PostgreSQL resilience report
 
       - name: Upload PostgreSQL resilience report
         if: always()
@@ -158,7 +167,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # 8. Display final PostgreSQL container status
+      # 9. Display final PostgreSQL container status
 
       - name: Display PostgreSQL container status
         if: always()
