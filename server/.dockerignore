@@ -1,0 +1,17 @@
+
+node_modules
+coverage
+tests
+benchmarks
+load-tests
+
+.env
+.env.*
+!.env.example
+
+certificates
+
+.git
+.gitignore
+
+npm-debug.log*
