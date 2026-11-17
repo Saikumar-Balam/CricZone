@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   valkey-resilience:
-    name: Redis Valkey Failure and Recovery
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -33,11 +32,9 @@ jobs:
       REDIS_URL: redis://127.0.0.1:56379
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
@@ -46,43 +43,56 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify isolated Valkey baseline
+      - name: Verify Valkey connectivity and cache operations
         run: |
           node --input-type=module -e '
           import { createClient } from "redis";
-
-          const client = createClient({
-            url: process.env.REDIS_URL,
-            socket: {
-              connectTimeout: 3000
-            }
-          });
-
+          const client = createClient({ url: process.env.REDIS_URL, socket: { connectTimeout: 3000, reconnectStrategy: retries => retries > 5 ? false : 200 } });
+          client.on("error", error => console.error("Valkey error:", error.code));
+          const key = "resilience:baseline";
           try {
             await client.connect();
-
-            const pong = await client.ping();
-            if (pong !== "PONG") {
-              throw new Error("Valkey PING failed");
-            }
-
-            const key = "resilience:baseline";
-            await client.set(key, "criczone", {
-              EX: 60
-            });
-
-            const value = await client.get(key);
-            if (value !== "criczone") {
-              throw new Error("Valkey GET failed");
-            }
-
+            if (await client.ping() !== "PONG") throw new Error("PING failed");
+            await client.set(key, "criczone", { EX: 60 });
+            if (await client.get(key) !== "criczone") throw new Error("GET failed");
             await client.del(key);
-
-            console.log("PASS: Valkey PING");
-            console.log("PASS: SET, GET, DELETE");
+            if (await client.get(key) !== null) throw new Error("DELETE failed");
+            console.log("PASS: PING, SET, GET, DELETE");
           } finally {
-            if (client.isOpen) {
-              await client.quit();
-            }
+            if (client.isReady) await client.del(key);
+            if (client.isOpen) client.destroy();
           }
           '
+
+      - name: Run Valkey baseline benchmark
+        run: node benchmarks/resilience/valkey/valkey-baseline.js
+
+      - name: Validate benchmark report
+        run: |
+          node --input-type=module -e '
+          import fs from "node:fs";
+          const path = "benchmarks/resilience/valkey/reports/baseline.json";
+          if (!fs.existsSync(path)) throw new Error("Report missing");
+          const report = JSON.parse(fs.readFileSync(path, "utf8"));
+          if (report.passed !== true) throw new Error("Benchmark failed");
+          for (const name of ["cacheSet", "cacheGet", "liveStateSet", "liveStateGet"]) {
+            const m = report.metrics?.[name];
+            if (!m || m.count !== 50 || m.failures !== 0 || m.successRatePercent !== 100 || !Number.isFinite(m.p95Ms) || !Number.isFinite(m.p99Ms)) throw new Error(`Invalid metric: ${name}`);
+          }
+          if (!(report.metrics.throughputOperationsPerSecond > 0)) throw new Error("Invalid throughput");
+          console.log("PASS: Report validated");
+          console.log(JSON.stringify(report.metrics, null, 2));
+          '
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: valkey-resilience-baseline
+          path: server/benchmarks/resilience/valkey/reports/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Valkey container status
+        if: always()
+        run: docker ps -a --filter "ancestor=valkey/valkey:8-alpine"
