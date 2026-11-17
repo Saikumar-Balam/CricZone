@@ -72,13 +72,14 @@ jobs:
           echo "arn=$ARN" >> "$GITHUB_OUTPUT"
           rm -f task-current.json task-new.json
 
+      
       - name: Deploy to ECS Express Mode
-        uses: aws-actions/amazon-ecs-deploy-express-service@v1
-        with:
-          service-name: criczone-api
-          cluster: default
-          task-definition-arn: ${{ steps.task.outputs.arn }}
-          infrastructure-role-arn: arn:aws:iam::260688678650:role/service-role/ecsInfrastructureRoleForExpressServices
+        env:
+          TASK_DEFINITION_ARN: ${{ steps.task.outputs.arn }}
+        run: |
+          set -euo pipefail
+          aws ecs update-express-gateway-service --service-arn arn:aws:ecs:ap-south-1:260688678650:service/default/criczone-api --task-definition-arn "$TASK_DEFINITION_ARN" --region ap-south-1 --no-cli-pager
+
 
       - name: Verify deployed task revision
         env:
