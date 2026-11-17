@@ -1,0 +1,88 @@
+
+name: Valkey Resilience Testing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  valkey-resilience:
+    name: Redis Valkey Failure and Recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports:
+          - 56379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: server
+
+    env:
+      NODE_ENV: test
+      REDIS_URL: redis://127.0.0.1:56379
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify isolated Valkey baseline
+        run: |
+          node --input-type=module -e '
+          import { createClient } from "redis";
+
+          const client = createClient({
+            url: process.env.REDIS_URL,
+            socket: {
+              connectTimeout: 3000
+            }
+          });
+
+          try {
+            await client.connect();
+
+            const pong = await client.ping();
+            if (pong !== "PONG") {
+              throw new Error("Valkey PING failed");
+            }
+
+            const key = "resilience:baseline";
+            await client.set(key, "criczone", {
+              EX: 60
+            });
+
+            const value = await client.get(key);
+            if (value !== "criczone") {
+              throw new Error("Valkey GET failed");
+            }
+
+            await client.del(key);
+
+            console.log("PASS: Valkey PING");
+            console.log("PASS: SET, GET, DELETE");
+          } finally {
+            if (client.isOpen) {
+              await client.quit();
+            }
+          }
+          '
