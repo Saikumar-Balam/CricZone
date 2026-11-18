@@ -1,10 +1,10 @@
 
-name: Build and Push Frontend to Amazon ECR
+name: CricZone Frontend CI - AWS ECR
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
       - "Dockerfile"
       - "nginx.conf"
@@ -13,49 +13,171 @@ on:
       - "package-lock.json"
       - "index.html"
       - "vite.config.js"
+      - "eslint.config.js"
       - "src/**"
       - "public/**"
       - ".github/workflows/deploy-frontend.yml"
 
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "Dockerfile"
+      - "nginx.conf"
+      - ".dockerignore"
+      - "package.json"
+      - "package-lock.json"
+      - "index.html"
+      - "vite.config.js"
+      - "eslint.config.js"
+      - "src/**"
+      - "public/**"
+      - ".github/workflows/deploy-frontend.yml"
+
+  workflow_dispatch:
+
 permissions:
-  id-token: write
   contents: read
 
+concurrency:
+  group: criczone-frontend-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  build-and-push:
+  test:
+    name: Frontend CI Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials with OIDC
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Build React application
+        env:
+          VITE_API_BASE_URL: https://cr-5dda4a2d4f4941bab434b9ec8967acf4.ecs.ap-south-1.on.aws
+        run: npm run build
+
+      - name: Verify build output
+        run: |
+          set -euo pipefail
+          test -f dist/index.html
+          test -d dist/assets
+          echo "Frontend build verified."
+
+  build:
+    name: Build and Push Frontend to ECR
+    needs: test
+
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == 'refs/heads/main')
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_REGION: ap-south-1
+      ECR_REPOSITORY: criczone-frontend
+      API_BASE_URL: https://cr-5dda4a2d4f4941bab434b9ec8967acf4.ecs.ap-south-1.on.aws
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::260688678650:role/CricZone-GitHub-ECR-Role
           aws-region: ap-south-1
 
-      - name: Log in to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build and push frontend container
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: criczone-frontend
-          API_BASE_URL: https://cr-5dda4a2d4f4941bab434b9ec8967acf4.ecs.ap-south-1.on.aws
+      - name: Verify AWS identity
         run: |
           set -euo pipefail
 
-          IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY"
+          ACCOUNT=$(aws sts get-caller-identity \
+            --query Account \
+            --output text)
 
-          docker build \
-            --build-arg "VITE_API_BASE_URL=$API_BASE_URL" \
-            -t "$IMAGE:${GITHUB_SHA}" \
-            -t "$IMAGE:latest" \
-            .
+          if [ "$ACCOUNT" != "260688678650" ]; then
+            echo "::error::Unexpected AWS account."
+            exit 1
+          fi
 
-          docker push "$IMAGE:${GITHUB_SHA}"
-          docker push "$IMAGE:latest"
+          echo "AWS identity verified."
 
-          echo "Published image: $IMAGE:${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build or reuse frontend image
+        id: image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
+
+          if aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$GITHUB_SHA" \
+            >/dev/null 2>&1; then
+
+            echo "Reusing existing image."
+
+          else
+
+            docker build \
+              --build-arg "VITE_API_BASE_URL=$API_BASE_URL" \
+              --tag "$IMAGE" \
+              .
+
+            docker push "$IMAGE"
+
+          fi
+
+          DIGEST=$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$GITHUB_SHA" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)
+
+          if [ -z "$DIGEST" ] || [ "$DIGEST" = "None" ]; then
+            echo "::error::Unable to resolve image digest."
+            exit 1
+          fi
+
+          echo "uri=$REGISTRY/$ECR_REPOSITORY@$DIGEST" >> "$GITHUB_OUTPUT"
+
+          echo "Frontend Docker image ready."
+
+      - name: Build summary
+        if: success()
+        run: |
+          {
+            echo "## CricZone Frontend"
+            echo ""
+            echo "Status: Build successful"
+            echo ""
+            echo "Commit: $GITHUB_SHA"
+            echo ""
+            echo "ECR image published"
+          } >> "$GITHUB_STEP_SUMMARY"
