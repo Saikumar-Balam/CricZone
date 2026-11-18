@@ -4,9 +4,9 @@ import { performance } from "node:perf_hooks";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 
-import RedisCache from "../../src/cache/RedisCache.js";
-import RedisLiveCache from "../../src/cache/redis/RedisLiveCache.js";
-import { CacheKeys } from "../../src/cache/CacheKeys.js";
+import RedisCache from "../../../src/cache/RedisCache.js";
+import RedisLiveCache from "../../../src/cache/redis/RedisLiveCache.js";
+import { CacheKeys } from "../../../src/cache/CacheKeys.js";
 
 import { loadBenchmarkConfig } from "./config/benchmarkConfig.js";
 import { validateBenchmarkEnvironment } from "./config/validateBenchmarkEnvironment.js";

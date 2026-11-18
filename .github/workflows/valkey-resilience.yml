@@ -84,6 +84,59 @@ jobs:
           console.log(JSON.stringify(report.metrics, null, 2));
           '
 
+      - name: Simulate Valkey outage
+        run: node benchmarks/resilience/valkey/valkey-outage.js
+
+      - name: Validate Valkey outage report
+        run: |
+          node --input-type=module -e '
+          import fs from "node:fs";
+
+          const report = JSON.parse(
+            fs.readFileSync(
+              "benchmarks/resilience/valkey/reports/outage.json",
+              "utf8"
+            )
+          );
+
+          for (const field of [
+            "baselineHealthy",
+            "containerStopped",
+            "disconnectDetected",
+            "pingRejected",
+            "cacheGetReturnedNull",
+            "cacheWarningObserved",
+            "containerRestarted",
+            "passed"
+          ]) {
+            if (report[field] !== true) {
+              throw new Error(`Outage verification failed: ${field}`);
+            }
+          }
+
+          if (
+            !Number.isFinite(report.detectionLatencyMs) ||
+            report.detectionLatencyMs < 0
+          ) {
+            throw new Error("Invalid outage detection latency");
+          }
+
+          console.log("PASS: Valkey outage detected");
+          console.log(
+            "Detection latency:",
+            report.detectionLatencyMs,
+            "ms"
+          );
+          '
+
+      - name: Restore isolated Valkey container
+        if: always()
+        run: |
+          IDS=$(docker ps -aq --filter "publish=56379")
+          if [ -n "$IDS" ]; then
+            docker start $IDS || true
+          fi
+
       - name: Upload benchmark report
         if: always()
         uses: actions/upload-artifact@v4
