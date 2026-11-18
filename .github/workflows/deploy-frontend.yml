@@ -181,3 +181,268 @@ jobs:
             echo ""
             echo "ECR image published"
           } >> "$GITHUB_STEP_SUMMARY"
+
+
+  deploy:
+    name: Deploy Frontend to AWS ECS
+    needs: build
+
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == 'refs/heads/main')
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_REGION: ap-south-1
+      ECS_CLUSTER: default
+      ECS_SERVICE: criczone-frontend-3bc2
+      ECR_REPOSITORY: criczone-frontend
+      ECS_SERVICE_ARN: arn:aws:ecs:ap-south-1:260688678650:service/default/criczone-frontend-3bc2
+      FRONTEND_URL: https://cr-051d3f8477f3431aa767f739d589ff84.ecs.ap-south-1.on.aws
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::260688678650:role/CricZone-GitHub-ECR-Role
+          aws-region: ap-south-1
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+
+          ACCOUNT=$(aws sts get-caller-identity \
+            --query Account \
+            --output text)
+
+          if [ "$ACCOUNT" != "260688678650" ]; then
+            echo "::error::Unexpected AWS account."
+            exit 1
+          fi
+
+          echo "AWS account verified."
+
+      - name: Resolve frontend ECR image
+        id: image
+        run: |
+          set -euo pipefail
+
+          DIGEST=$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$GITHUB_SHA" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)
+
+          if [ -z "$DIGEST" ] || [ "$DIGEST" = "None" ]; then
+            echo "::error::Frontend Docker image not found."
+            exit 1
+          fi
+
+          ACCOUNT=$(aws sts get-caller-identity \
+            --query Account \
+            --output text)
+
+          IMAGE_URI="$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY@$DIGEST"
+
+          echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+          echo "Frontend image digest resolved."
+
+      - name: Register frontend task definition
+        id: task
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          trap 'rm -f task-current.json task-new.json' EXIT
+
+          CURRENT_TASK=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query "services[0].deployments[?status=='PRIMARY'].taskDefinition | [0]" \
+            --output text)
+
+          if [ -z "$CURRENT_TASK" ] || [ "$CURRENT_TASK" = "None" ]; then
+            echo "::error::Current frontend task not found."
+            exit 1
+          fi
+
+          aws ecs describe-task-definition \
+            --task-definition "$CURRENT_TASK" \
+            --query taskDefinition \
+            --output json > task-current.json
+
+          jq -e --arg image "$IMAGE_URI" '
+            {
+              family,
+              taskRoleArn,
+              executionRoleArn,
+              networkMode,
+              containerDefinitions,
+              volumes,
+              placementConstraints,
+              requiresCompatibilities,
+              cpu,
+              memory,
+              runtimePlatform,
+              ephemeralStorage,
+              pidMode,
+              ipcMode,
+              proxyConfiguration
+            }
+            | with_entries(select(.value != null))
+            | if (.containerDefinitions | length) == 1
+              then .containerDefinitions[0].image = $image
+              else error("Expected exactly one frontend container")
+              end
+          ' task-current.json > task-new.json
+
+          ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://task-new.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            echo "::error::Frontend task registration failed."
+            exit 1
+          fi
+
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+
+          echo "Frontend task registered: $ARN"
+
+      - name: Deploy frontend to ECS Express Mode
+        env:
+          TASK_DEFINITION_ARN: ${{ steps.task.outputs.arn }}
+        run: |
+          set -euo pipefail
+
+          aws ecs update-express-gateway-service \
+            --service-arn "$ECS_SERVICE_ARN" \
+            --task-definition-arn "$TASK_DEFINITION_ARN" \
+            --no-cli-pager \
+            --output json > /dev/null
+
+          echo "Frontend deployment requested."
+
+      - name: Wait for frontend deployment
+        env:
+          EXPECTED_TASK: ${{ steps.task.outputs.arn }}
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 120); do
+            STATUS=$(aws ecs describe-services \
+              --cluster "$ECS_CLUSTER" \
+              --services "$ECS_SERVICE" \
+              --query "services[0].deployments[?taskDefinition=='$EXPECTED_TASK'].rolloutState | [0]" \
+              --output text)
+
+            echo "Deployment check $attempt/120: $STATUS"
+
+            if [ "$STATUS" = "COMPLETED" ]; then
+              echo "Frontend deployment completed."
+              exit 0
+            fi
+
+            if [ "$STATUS" = "FAILED" ]; then
+              echo "::error::Frontend deployment failed."
+              exit 1
+            fi
+
+            if [ "$STATUS" = "None" ]; then
+              echo "::error::Expected frontend deployment not found."
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          echo "::error::Frontend deployment timed out."
+          exit 1
+
+      - name: Verify running frontend task
+        env:
+          EXPECTED_TASK: ${{ steps.task.outputs.arn }}
+        run: |
+          set -euo pipefail
+
+          RUNNING_TASKS=$(aws ecs list-tasks \
+            --cluster "$ECS_CLUSTER" \
+            --service-name "$ECS_SERVICE" \
+            --desired-status RUNNING \
+            --query 'taskArns' \
+            --output text)
+
+          if [ -z "$RUNNING_TASKS" ]; then
+            echo "::error::No running frontend tasks."
+            exit 1
+          fi
+
+          TASK_REVISIONS=$(aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" \
+            --tasks $RUNNING_TASKS \
+            --query 'tasks[].taskDefinitionArn' \
+            --output text)
+
+          if ! printf '%s\n' "$TASK_REVISIONS" \
+            | tr '\t' '\n' \
+            | grep -Fxq "$EXPECTED_TASK"; then
+            echo "::error::Expected frontend revision not running."
+            exit 1
+          fi
+
+          echo "Correct frontend revision running."
+
+      - name: Verify frontend HTTP health
+        run: |
+          set -euo pipefail
+
+          RESPONSE=$(curl \
+            --fail \
+            --silent \
+            --show-error \
+            --retry 10 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            --max-time 15 \
+            "$FRONTEND_URL/")
+
+          if ! printf '%s' "$RESPONSE" \
+            | grep -qi '<html'; then
+            echo "::error::Frontend did not return an HTML page."
+            exit 1
+          fi
+
+          echo "Frontend HTTP health check passed."
+
+      - name: Deployment summary
+        if: success()
+        env:
+          DEPLOYED_TASK: ${{ steps.task.outputs.arn }}
+        run: |
+          {
+            echo "## CricZone Frontend CI/CD"
+            echo ""
+            echo "Status: Successful"
+            echo ""
+            echo "Commit: $GITHUB_SHA"
+            echo ""
+            echo "Task: $DEPLOYED_TASK"
+            echo ""
+            echo "Environment: AWS ECS Production"
+            echo ""
+            echo "Frontend HTTP health: Passed"
+          } >> "$GITHUB_STEP_SUMMARY"
