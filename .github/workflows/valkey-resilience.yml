@@ -129,6 +129,57 @@ jobs:
           );
           '
 
+      - name: Verify original Redis client recovery
+        run: node benchmarks/resilience/valkey/valkey-recovery.js
+
+      - name: Validate Valkey recovery report
+        run: |
+          node --input-type=module -e '
+          import fs from "node:fs";
+
+          const path =
+            "benchmarks/resilience/valkey/reports/recovery.json";
+
+          if (!fs.existsSync(path)) {
+            throw new Error("Recovery report missing");
+          }
+
+          const r = JSON.parse(
+            fs.readFileSync(path, "utf8")
+          );
+
+          for (const field of [
+            "baselineHealthy",
+            "outageDetected",
+            "containerRestarted",
+            "sameClientReused",
+            "automaticallyReconnected",
+            "pingAfterRecovery",
+            "setAfterRecovery",
+            "getAfterRecovery",
+            "passed"
+          ]) {
+            if (r[field] !== true) {
+              throw new Error(`Recovery failed: ${field}`);
+            }
+          }
+
+          if (
+            !Number.isFinite(r.recoveryLatencyMs) ||
+            r.readyEvents < 2 ||
+            r.reconnectEvents < 1
+          ) {
+            throw new Error("Invalid reconnection evidence");
+          }
+
+          console.log("PASS: Original client reconnected");
+          console.log(
+            "Recovery latency:",
+            r.recoveryLatencyMs,
+            "ms"
+          );
+          '
+
       - name: Restore isolated Valkey container
         if: always()
         run: |
