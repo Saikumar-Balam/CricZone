@@ -42,8 +42,9 @@ jobs:
       TEST_KAFKA_BROKERS: ${{ secrets.TEST_KAFKA_BROKERS }}
       TEST_KAFKA_USERNAME: ${{ secrets.TEST_KAFKA_USERNAME }}
       TEST_KAFKA_PASSWORD: ${{ secrets.TEST_KAFKA_PASSWORD }}
-      TEST_KAFKA_TOPIC: criczone.test.live-events
-      TEST_KAFKA_CA_PATH: ${{ runner.temp }}/kafka-test-ca.pem
+      TEST_KAFKA_TOPIC: criczone.test.live-events      
+      TEST_KAFKA_CA_PATH: /tmp/kafka-test-ca.pem
+
 
     steps:
       - name: Checkout repository
