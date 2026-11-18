@@ -20,22 +20,30 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
-  group: criczone-backend-production
+  group: criczone-backend-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-
   test:
     name: Backend CI Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     defaults:
       run:
         working-directory: server
+
+    env:
+      NODE_ENV: test
+      TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+      TEST_REDIS_URL: ${{ secrets.TEST_REDIS_URL }}
+      TEST_KAFKA_BROKERS: ${{ secrets.TEST_KAFKA_BROKERS }}
+      TEST_KAFKA_USERNAME: ${{ secrets.TEST_KAFKA_USERNAME }}
+      TEST_KAFKA_PASSWORD: ${{ secrets.TEST_KAFKA_PASSWORD }}
+      TEST_KAFKA_TOPIC: criczone.test.live-events
+      TEST_KAFKA_CA_PATH: ${{ runner.temp }}/kafka-test-ca.pem
 
     steps:
       - name: Checkout repository
@@ -51,24 +59,143 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run backend tests
+      - name: Validate test environment
+        run: |
+          set -euo pipefail
+
+          for VAR in \
+            TEST_DATABASE_URL \
+            TEST_REDIS_URL \
+            TEST_KAFKA_BROKERS \
+            TEST_KAFKA_USERNAME \
+            TEST_KAFKA_PASSWORD; do
+            if [ -z "${!VAR:-}" ]; then
+              echo "::error::Missing test configuration: $VAR"
+              exit 1
+            fi
+          done
+
+          echo "Test configuration validated."
+
+      - name: Configure Kafka TLS certificate
+        env:
+          TEST_KAFKA_CA: ${{ secrets.TEST_KAFKA_CA }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          if [ -z "$TEST_KAFKA_CA" ]; then
+            echo "::error::Missing TEST_KAFKA_CA secret."
+            exit 1
+          fi
+
+          printf '%s\n' "$TEST_KAFKA_CA" > "$TEST_KAFKA_CA_PATH"
+
+          echo "Kafka certificate configured."
+
+      - name: Verify PostgreSQL connection
+        run: |
+          node --input-type=module -e '
+          import pg from "pg";
+
+          const client = new pg.Client({
+            connectionString: process.env.TEST_DATABASE_URL,
+            connectionTimeoutMillis: 10000
+          });
+
+          try {
+            await client.connect();
+
+            const result = await client.query(
+              "SELECT 1 AS connected"
+            );
+
+            if (result.rows[0].connected !== 1) {
+              throw new Error("PostgreSQL connectivity failed");
+            }
+
+            console.log("PostgreSQL connection passed");
+          } finally {
+            await client.end();
+          }
+          '
+
+      - name: Verify Valkey connection
+        run: |
+          node --input-type=module -e '
+          import { createClient } from "redis";
+
+          const client = createClient({
+            url: process.env.TEST_REDIS_URL,
+            socket: {
+              connectTimeout: 10000,
+              reconnectStrategy: false
+            }
+          });
+
+          client.on("error", () => {});
+
+          try {
+            await client.connect();
+
+            if (await client.ping() !== "PONG") {
+              throw new Error("Valkey PING failed");
+            }
+
+            console.log("Valkey connection passed");
+          } finally {
+            if (client.isOpen) {
+              client.destroy();
+            }
+          }
+          '
+
+      - name: Verify Kafka connection
+        run: |
+          npx vitest run \
+            tests/integration/kafka/kafka.connection.test.js
+
+      - name: Verify Kafka test topic
+        run: |
+          npx vitest run \
+            tests/integration/kafka/kafka.isolation.test.js
+
+      - name: Run complete backend test suite
         run: npm test
+
+      - name: Clean up Kafka certificate
+        if: always()
+        run: |
+          rm -f "$TEST_KAFKA_CA_PATH"
 
       - name: CI summary
         if: success()
         run: |
-          echo "Backend CI checks passed." >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## CricZone Backend CI"
+            echo ""
+            echo "Status: Passed"
+            echo ""
+            echo "PostgreSQL: Connected"
+            echo ""
+            echo "Valkey: Connected"
+            echo ""
+            echo "Kafka: Connected"
+            echo ""
+            echo "Backend tests: Passed"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
     name: Deploy Backend to AWS ECS
     needs: test
-
-    if: >-
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch'
+    if: false
 
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    permissions:
+      contents: read
+      id-token: write
 
     env:
       AWS_REGION: ap-south-1
@@ -91,9 +218,17 @@ jobs:
       - name: Verify AWS identity
         run: |
           set -euo pipefail
-          aws sts get-caller-identity \
-            --query '{Account:Account,Arn:Arn}' \
-            --output json
+
+          ACCOUNT=$(aws sts get-caller-identity \
+            --query Account \
+            --output text)
+
+          if [ "$ACCOUNT" != "260688678650" ]; then
+            echo "::error::Unexpected AWS account."
+            exit 1
+          fi
+
+          echo "AWS account verified."
 
       - name: Login to Amazon ECR
         id: ecr
@@ -108,28 +243,19 @@ jobs:
 
           IMAGE="$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
 
-          echo "Checking whether image exists in ECR..."
-
           if aws ecr describe-images \
             --repository-name "$ECR_REPOSITORY" \
             --image-ids imageTag="$GITHUB_SHA" \
             >/dev/null 2>&1; then
 
-            echo "Existing immutable image found."
-            echo "Reusing existing image."
+            echo "Reusing existing immutable image."
 
           else
-
-            echo "Building backend Docker image..."
-
             docker build \
               --tag "$IMAGE" \
               ./server
 
-            echo "Pushing image to Amazon ECR..."
-
             docker push "$IMAGE"
-
           fi
 
           DIGEST=$(aws ecr describe-images \
@@ -139,7 +265,7 @@ jobs:
             --output text)
 
           if [ -z "$DIGEST" ] || [ "$DIGEST" = "None" ]; then
-            echo "::error::Unable to resolve ECR image digest."
+            echo "::error::ECR image digest missing."
             exit 1
           fi
 
@@ -147,8 +273,7 @@ jobs:
 
           echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
-          echo "ECR image verified successfully."
-
+          echo "Docker image ready."
 
       - name: Register updated task definition
         id: task
@@ -160,8 +285,6 @@ jobs:
 
           trap 'rm -f task-current.json task-new.json' EXIT
 
-          echo "Retrieving current ECS task definition..."
-
           CURRENT_TASK=$(aws ecs describe-services \
             --cluster "$ECS_CLUSTER" \
             --services "$ECS_SERVICE" \
@@ -169,11 +292,11 @@ jobs:
             --output text)
 
           if [ -z "$CURRENT_TASK" ] || [ "$CURRENT_TASK" = "None" ]; then
-            echo "::error::Cannot find PRIMARY ECS task definition."
+            echo "::error::Current ECS task not found."
             exit 1
           fi
 
-          echo "Current task: $CURRENT_TASK"
+          echo "Current ECS task: $CURRENT_TASK"
 
           aws ecs describe-task-definition \
             --task-definition "$CURRENT_TASK" \
@@ -211,21 +334,19 @@ jobs:
               end
           ' task-current.json > task-new.json
 
-          echo "Registering new task definition..."
-
           ARN=$(aws ecs register-task-definition \
             --cli-input-json file://task-new.json \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
 
           if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
-            echo "::error::Task definition registration failed."
+            echo "::error::Task registration failed."
             exit 1
           fi
 
           echo "arn=$ARN" >> "$GITHUB_OUTPUT"
 
-          echo "Registered task definition: $ARN"
+          echo "Registered ECS task: $ARN"
 
       - name: Deploy to ECS Express Mode
         env:
@@ -233,15 +354,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Requesting ECS deployment..."
-
           aws ecs update-express-gateway-service \
             --service-arn "$ECS_SERVICE_ARN" \
             --task-definition-arn "$TASK_DEFINITION_ARN" \
             --no-cli-pager \
             --output json > /dev/null
 
-          echo "ECS deployment requested successfully."
+          echo "ECS deployment requested."
 
       - name: Wait for ECS deployment completion
         env:
@@ -249,10 +368,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Waiting for ECS rolling deployment..."
-
           for attempt in $(seq 1 120); do
-
             STATUS=$(aws ecs describe-services \
               --cluster "$ECS_CLUSTER" \
               --services "$ECS_SERVICE" \
@@ -262,7 +378,7 @@ jobs:
             echo "Deployment check $attempt/120: $STATUS"
 
             if [ "$STATUS" = "COMPLETED" ]; then
-              echo "ECS deployment completed successfully."
+              echo "ECS deployment completed."
               exit 0
             fi
 
@@ -277,14 +393,12 @@ jobs:
             fi
 
             sleep 10
-
           done
 
-          echo "::error::ECS deployment timed out after 20 minutes."
+          echo "::error::ECS deployment timed out."
           exit 1
 
-
-      - name: Verify running ECS task revision
+      - name: Verify running ECS task
         env:
           EXPECTED_TASK: ${{ steps.task.outputs.arn }}
         run: |
@@ -312,19 +426,15 @@ jobs:
             | tr '\t' '\n' \
             | grep -Fxq "$EXPECTED_TASK"; then
 
-            echo "::error::New task revision is not running."
+            echo "::error::Expected ECS revision not running."
             exit 1
-
           fi
 
-          echo "Expected task revision is running."
+          echo "Correct ECS revision running."
 
-
-      - name: Verify backend health
+      - name: Verify production backend health
         run: |
           set -euo pipefail
-
-          echo "Checking production backend health..."
 
           curl \
             --fail \
@@ -336,7 +446,7 @@ jobs:
             --max-time 15 \
             "$HEALTH_URL" > /dev/null
 
-          echo "Backend health check passed."
+          echo "Production backend health check passed."
 
       - name: Deployment summary
         if: success()
@@ -350,9 +460,9 @@ jobs:
             echo ""
             echo "Commit: $GITHUB_SHA"
             echo ""
-            echo "ECS task: $DEPLOYED_TASK"
+            echo "Task: $DEPLOYED_TASK"
             echo ""
-            echo "Environment: AWS Production"
+            echo "Environment: AWS ECS Production"
             echo ""
-            echo "Backend health: Passed"
+            echo "Health: Passed"
           } >> "$GITHUB_STEP_SUMMARY"
