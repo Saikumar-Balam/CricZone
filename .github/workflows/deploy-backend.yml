@@ -17,8 +17,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    env:
+      AWS_REGION: ap-south-1
+      ECS_CLUSTER: default
+      ECS_SERVICE: criczone-api
+      ECR_REPOSITORY: criczone-backend
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -30,30 +37,36 @@ jobs:
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      
-      - name: Build and push backend
+      - name: Build or reuse backend image
         id: image
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           set -euo pipefail
-          IMAGE="$REGISTRY/criczone-backend:$GITHUB_SHA"
 
-          if aws ecr describe-images --repository-name criczone-backend --image-ids imageTag="$GITHUB_SHA" --region ap-south-1 >/dev/null 2>&1; then
-            echo "Image already exists. Reusing existing image."
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
+
+          if aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$GITHUB_SHA" \
+            >/dev/null 2>&1; then
+            echo "Reusing existing ECR image."
           else
             docker build -t "$IMAGE" ./server
             docker push "$IMAGE"
           fi
 
-          DIGEST=$(aws ecr describe-images --repository-name criczone-backend --image-ids imageTag="$GITHUB_SHA" --region ap-south-1 --query 'imageDetails[0].imageDigest' --output text)
+          DIGEST=$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$GITHUB_SHA" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)
 
           test -n "$DIGEST"
           test "$DIGEST" != "None"
 
-          echo "uri=$REGISTRY/criczone-backend@$DIGEST" >> "$GITHUB_OUTPUT"
-          echo "Using image digest: $DIGEST"
-
+          echo "uri=$REGISTRY/$ECR_REPOSITORY@$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Image digest verified."
 
       - name: Register updated task definition
         id: task
@@ -61,46 +74,120 @@ jobs:
           IMAGE_URI: ${{ steps.image.outputs.uri }}
         run: |
           set -euo pipefail
-          aws ecs describe-task-definition --task-definition default-criczone-api:17 --query taskDefinition --output json > task-current.json
-          jq --arg image "$IMAGE_URI" '{
-            family,
-            taskRoleArn,
-            executionRoleArn,
-            networkMode,
-            containerDefinitions,
-            volumes,
-            placementConstraints,
-            requiresCompatibilities,
-            cpu,
-            memory,
-            runtimePlatform,
-            ephemeralStorage,
-            pidMode,
-            ipcMode,
-            proxyConfiguration
-          } | with_entries(select(.value != null)) | .containerDefinitions |= map(if .name == "Main" then .image = $image else . end)' task-current.json > task-new.json
-          ARN=$(aws ecs register-task-definition --cli-input-json file://task-new.json --query 'taskDefinition.taskDefinitionArn' --output text)
-          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
-          rm -f task-current.json task-new.json
+          umask 077
+          trap 'rm -f task-current.json task-new.json' EXIT
 
-      
+          CURRENT_TASK=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].taskDefinition' \
+            --output text)
+
+          test -n "$CURRENT_TASK"
+          test "$CURRENT_TASK" != "None"
+
+          aws ecs describe-task-definition \
+            --task-definition "$CURRENT_TASK" \
+            --query taskDefinition \
+            --output json > task-current.json
+
+          jq -e --arg image "$IMAGE_URI" '
+            {
+              family,
+              taskRoleArn,
+              executionRoleArn,
+              networkMode,
+              containerDefinitions,
+              volumes,
+              placementConstraints,
+              requiresCompatibilities,
+              cpu,
+              memory,
+              runtimePlatform,
+              ephemeralStorage,
+              pidMode,
+              ipcMode,
+              proxyConfiguration
+            }
+            | with_entries(select(.value != null))
+            | .containerDefinitions |= map(
+                if .name == "Main"
+                then .image = $image
+                else .
+                end
+              )
+          ' task-current.json > task-new.json
+
+          ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://task-new.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          test -n "$ARN"
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+          echo "Registered task definition: $ARN"
+
       - name: Deploy to ECS Express Mode
         env:
           TASK_DEFINITION_ARN: ${{ steps.task.outputs.arn }}
         run: |
           set -euo pipefail
-          aws ecs update-express-gateway-service --service-arn arn:aws:ecs:ap-south-1:260688678650:service/default/criczone-api --task-definition-arn "$TASK_DEFINITION_ARN" --region ap-south-1 --no-cli-pager
 
+          aws ecs update-express-gateway-service \
+            --service-arn arn:aws:ecs:ap-south-1:260688678650:service/default/criczone-api \
+            --task-definition-arn "$TASK_DEFINITION_ARN" \
+            --no-cli-pager \
+            --output json > /dev/null
 
-      - name: Verify deployed task revision
+          echo "ECS deployment requested."
+
+      - name: Wait for ECS deployment completion
         env:
           EXPECTED_TASK: ${{ steps.task.outputs.arn }}
         run: |
           set -euo pipefail
-          RUNNING_TASKS=$(aws ecs list-tasks --cluster default --service-name criczone-api --desired-status RUNNING --query 'taskArns' --output text)
-          test -n "$RUNNING_TASKS"
-          aws ecs describe-tasks --cluster default --tasks $RUNNING_TASKS --query 'tasks[].taskDefinitionArn' --output text | tr '\t' '\n' | grep -Fx "$EXPECTED_TASK"
+
+          for attempt in $(seq 1 120); do
+            STATUS=$(aws ecs describe-services \
+              --cluster "$ECS_CLUSTER" \
+              --services "$ECS_SERVICE" \
+              --query "services[0].deployments[?taskDefinition=='$EXPECTED_TASK'].rolloutState | [0]" \
+              --output text)
+
+            echo "Deployment check $attempt/120: $STATUS"
+
+            if [ "$STATUS" = "COMPLETED" ]; then
+              echo "Deployment completed."
+              exit 0
+            fi
+
+            if [ "$STATUS" = "FAILED" ]; then
+              echo "::error::ECS deployment failed."
+              exit 1
+            fi
+
+            if [ "$STATUS" = "None" ]; then
+              echo "::error::Expected task definition not found in active deployments."
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          echo "::error::Deployment did not finish within 20 minutes."
+          exit 1
 
       - name: Verify backend health
         run: |
-          curl --fail --silent --show-error --retry 5 --retry-delay 5 --max-time 15 https://cr-5dda4a2d4f4941bab434b9ec8967acf4.ecs.ap-south-1.on.aws/health
+          set -euo pipefail
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --retry 10 \
+            --retry-delay 5 \
+            --max-time 15 \
+            https://cr-5dda4a2d4f4941bab434b9ec8967acf4.ecs.ap-south-1.on.aws/health
+
+          echo "Backend health check passed."
