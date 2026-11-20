@@ -179,6 +179,44 @@ jobs:
             "ms"
           );
           '
+      
+      - name: Verify PostgreSQL fallback and cache consistency
+        env:
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+        run: node benchmarks/resilience/valkey/valkey-consistency.js
+
+      - name: Validate consistency report
+        run: |
+          node --input-type=module -e '
+          import fs from "node:fs";
+
+          const path =
+            "benchmarks/resilience/valkey/reports/consistency.json";
+
+          if (!fs.existsSync(path)) {
+            throw new Error("Consistency report missing");
+          }
+
+          const r = JSON.parse(fs.readFileSync(path, "utf8"));
+
+          for (const field of [
+            "baselineHealthy",
+            "cacheInitiallyPopulated",
+            "outageDetected",
+            "fallbackReadFromPostgres",
+            "cacheWriteFailureLogged",
+            "redisReconnected",
+            "repairSucceeded",
+            "automaticConsistencyPassed",
+            "passed"
+          ]) {
+            if (r[field] !== true) {
+              throw new Error(`Consistency check failed: ${field}`);
+            }
+          }
+
+          console.log("PASS: PostgreSQL fallback and consistency");
+          '
 
       - name: Restore isolated Valkey container
         if: always()
