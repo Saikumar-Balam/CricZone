@@ -1,6 +1,6 @@
 
 import pg from "pg";
-import { createClient } from "rediss";
+import { createClient } from "redis";
 import { execFileSync } from "node:child_process";
 import { performance } from "node:perf_hooks";
 import { randomUUID } from "node:crypto";
