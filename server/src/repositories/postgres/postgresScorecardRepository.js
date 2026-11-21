@@ -3,6 +3,7 @@ import { MatchFormatRules } from "../../domain/cricket/MatchFormatRules.js";
 import { SuperOverRules } from "../../domain/SuperOverRules.js";
 
 import ScorecardRepository from "../contracts/ScorecardRepository.js";
+import { CacheKeys } from "../../cache/CacheKeys.js";
 
 export default class PostgresScorecardRepository extends ScorecardRepository {
   constructor(databaseClient) {
@@ -137,7 +138,7 @@ export default class PostgresScorecardRepository extends ScorecardRepository {
         select id from deliveries
         where event_id = $1
         limit 1`, [eventId])
-    
+
       if(duplicateCheck.rows.length > 0)
       {
         await client.query("ROLLBACK")
@@ -322,7 +323,7 @@ export default class PostgresScorecardRepository extends ScorecardRepository {
       const newInningsWickets = currentInnings.wickets + wicketsToAdd;
 
       const inningsEndedByWickets = inningsRules.wicketsToEndInnings != null &&newInningsWickets >= inningsRules.wicketsToEndInnings;
-        
+
 
       if (
         inningsRules.inningsMaxBalls != null &&
@@ -558,7 +559,7 @@ export default class PostgresScorecardRepository extends ScorecardRepository {
 
       const currentStateResult = await client.query(
         `
-        update innings 
+        update innings
         set
         current_striker_id = $1,
         current_non_striker_id = $2,
@@ -797,14 +798,14 @@ export default class PostgresScorecardRepository extends ScorecardRepository {
       const milestoneEvents = []
       // Batter milestone
       const batterMilestoneResult = await client.query(`
-        select 
+        select
         bp.player_id,
         bp.runs,
         bp.balls_faced,
         p.name as player_name
         from batting_performances bp
-        
-        join players p 
+
+        join players p
         on p.id = bp.player_id
         where bp.innings_id = $1
         and bp.player_id = $2`, [payload.inningsId, payload.strikerId])
@@ -836,14 +837,14 @@ export default class PostgresScorecardRepository extends ScorecardRepository {
             text,
             highlight_type,
             metadata)
-            
+
             values (
             $1, $2, $3,
-            $4, 
+            $4,
             $5, $6,
-            $7, $8, 
+            $7, $8,
             $9, $10)
-            returning *`, [payload.matchId, payload.inningsId, delivery.id, "MILESTONE", payload.overNumber, payload.ballNumber, 
+            returning *`, [payload.matchId, payload.inningsId, delivery.id, "MILESTONE", payload.overNumber, payload.ballNumber,
             `${updatedBatter.player_name} ${milestone}`,
             `${updatedBatter.player_name} reaches ${milestone} runs`,"MILESTONE",
             JSON.stringify({
@@ -859,16 +860,16 @@ export default class PostgresScorecardRepository extends ScorecardRepository {
           milestoneEvents.push(batterMilestoneEventResult.rows[0])
         }
       }
-      
+
       // Team Milestone
-      const previousTeamRuns = updatedInnings.total_runs - payload.runs.total 
+      const previousTeamRuns = updatedInnings.total_runs - payload.runs.total
       const teamMilestones = inningsRules.milestones?.teamRuns ?? []
       for(const milestone of teamMilestones)
       {
         const milestoneCrossed = previousTeamRuns < milestone && updatedInnings.total_runs>=milestone
-        if(!milestoneCrossed)  
+        if(!milestoneCrossed)
         {
-          continue 
+          continue
         }
         const teamMilestoneEventResult = await client.query(`
           insert into commentary_events(
@@ -876,19 +877,19 @@ export default class PostgresScorecardRepository extends ScorecardRepository {
           innings_id,
           delivery_id,
           event_type,
-          over_number, 
+          over_number,
           ball_number,
-          title, 
+          title,
           text,
           highlight_type,
           metadata)
           values (
           $1, $2, $3,
-          $4, 
-          $5, $6, 
+          $4,
+          $5, $6,
           $7, $8,
           $9, $10)
-          returning *`, [payload.matchId, payload.inningsId, delivery.id, "MILESTONE", payload.overNumber, payload.ballNumber, 
+          returning *`, [payload.matchId, payload.inningsId, delivery.id, "MILESTONE", payload.overNumber, payload.ballNumber,
             `TEAM ${milestone}`,
             `Team reaches ${milestone} runs`,
             "MILESTONE",
@@ -950,7 +951,7 @@ export default class PostgresScorecardRepository extends ScorecardRepository {
           innings_id,
           delivery_id,
           event_type,
-          over_number, 
+          over_number,
           ball_number,
           title,
           text,
@@ -961,9 +962,9 @@ export default class PostgresScorecardRepository extends ScorecardRepository {
           $4, $5, $6,
           $7, $8,
           $9, $10)
-          returning *`, [payload.matchId, payload.inningsId, delivery.id, "INNINGS_END", payload.overNumber, payload.ballNumber, "INNINGS COMPLETE", 
+          returning *`, [payload.matchId, payload.inningsId, delivery.id, "INNINGS_END", payload.overNumber, payload.ballNumber, "INNINGS COMPLETE",
             `Innings completed: ${completionReason}`,
-            null, 
+            null,
             JSON.stringify({
               completionReason,
               runs: updatedInnings.total_runs,
@@ -976,6 +977,32 @@ export default class PostgresScorecardRepository extends ScorecardRepository {
           inningsEndEvent = inningsEndResult.rows[0]
       }
 
+      // Record cache invalidation in the same transaction
+      // as the ball and score updates.
+      const cacheKeys = [
+        CacheKeys.matchById(payload.matchId),
+        CacheKeys.scorecardByMatchId(payload.matchId),
+        CacheKeys.matchSummary(payload.matchId),
+        CacheKeys.matchLive(payload.matchId)
+      ];
+
+      await client.query(
+        `
+          INSERT INTO public.cache_invalidation_outbox (
+            event_id,
+            match_id,
+            cache_keys,
+            status
+          )
+          VALUES ($1, $2, $3::jsonb, 'PENDING')
+          ON CONFLICT (event_id) DO NOTHING
+        `,
+        [
+          eventId,
+          payload.matchId,
+          JSON.stringify(cacheKeys)
+        ]
+      );
 
       await client.query("COMMIT");
 

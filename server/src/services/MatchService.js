@@ -1,37 +1,61 @@
+
 import MatchNotFoundError from "../errors/MatchNotFoundError.js";
 import { CacheKeys } from "../cache/CacheKeys.js";
 import { CacheTTL } from "../cache/CacheTTL.js";
 
 export default class MatchService {
-    constructor(MatchRepository, cache)
-    {
-        this.MatchRepository = MatchRepository
-        this.cache = cache
-    }
-    async getMatches()
-    {
-        return await this.MatchRepository.findAll()
-    }
-    async getMatchById(matchId)
-    {
-        const cacheKey = CacheKeys.matchById(matchId)
-        const cachedMatch = await this.cache.get(cacheKey)
-        if(cachedMatch)
-        {
-             console.log(`CACHE HIT: ${cacheKey}`);
-            return cachedMatch
-        }
-        console.log(`CACHE MISS: ${cacheKey}`);
+  constructor(matchRepository, cache, invalidationRepository = null) {
+    this.MatchRepository = matchRepository;
+    this.cache = cache;
+    this.invalidationRepository = invalidationRepository;
+  }
 
-        const match = await this.MatchRepository.findById(matchId);
-        if(!match)
-        {
-            throw new MatchNotFoundError(matchId)
-        }
-        await this.cache.set(cacheKey,match, CacheTTL.MATCH)
-        return match;
+  async getMatches() {
+    return this.MatchRepository.findAll();
+  }
+
+  async getMatchById(matchId) {
+    const cacheKey = CacheKeys.matchById(matchId);
+
+    // Fail closed if the outbox check fails.
+    // Do not serve Redis data when consistency is unknown.
+    const hasPending = async () => {
+      if (!this.invalidationRepository) {
+        return false;
+      }
+
+      return this.invalidationRepository
+        .hasPendingInvalidation(matchId);
+    };
+
+    const pendingBeforeRead = await hasPending();
+
+    if (!pendingBeforeRead) {
+      const cachedMatch = await this.cache.get(cacheKey);
+
+      // Recheck before serving a cached value.
+      if (cachedMatch && !(await hasPending())) {
+        return cachedMatch;
+      }
     }
+
+    // PostgreSQL remains the authoritative source.
+    const match = await this.MatchRepository.findById(matchId);
+
+    if (!match) {
+      throw new MatchNotFoundError(matchId);
+    }
+
+    // Never repopulate the cache while a known
+    // invalidation is still pending.
+    if (!(await hasPending())) {
+      await this.cache.set(cacheKey, match, CacheTTL.MATCH);
+    }
+
+    return match;
+  }
 }
+
 //     SRP
 
 // MatchService handles Match use cases/business logic, not SQL or HTTP.

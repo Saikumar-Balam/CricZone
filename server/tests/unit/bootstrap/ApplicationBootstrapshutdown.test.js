@@ -9,6 +9,7 @@ import {
 
 import ApplicationBootstrap
     from "../../../src/bootstrap/ApplicationBootstrap.js"
+import CacheInvalidationWorker from "../../../src/workers/CacheInvalidationWorker.js";
 
 
 describe("ApplicationBootstrap graceful shutdown", () => {
@@ -307,6 +308,110 @@ describe("ApplicationBootstrap graceful shutdown", () => {
         databaseClient.disconnect
     ).toHaveBeenCalledTimes(1)
 })
+
+it("should automatically poll the cache invalidation outbox", async () => {
+    vi.useFakeTimers();
+
+    const processBatch = vi
+        .spyOn(CacheInvalidationWorker.prototype, "processBatch")
+        .mockResolvedValue(0);
+
+    bootstrap.startOutboxWorker();
+
+    expect(bootstrap.cacheInvalidationWorker)
+        .toBeInstanceOf(CacheInvalidationWorker);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(processBatch).toHaveBeenCalledTimes(1);
+    expect(processBatch).toHaveBeenCalledWith(50);
+
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(processBatch).toHaveBeenCalledTimes(3);
+
+    await bootstrap.stopOutboxWorker();
+
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(processBatch).toHaveBeenCalledTimes(3);
+});
+
+
+it("should prevent overlapping outbox processing", async () => {
+    vi.useFakeTimers();
+
+    let completeBatch;
+
+    const pendingBatch = new Promise((resolve) => {
+        completeBatch = resolve;
+    });
+
+    const processBatch = vi
+        .spyOn(CacheInvalidationWorker.prototype, "processBatch")
+        .mockImplementation(() => pendingBatch);
+
+    bootstrap.startOutboxWorker();
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(processBatch).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(5000);
+
+    // The current batch is still running.
+    // A second batch must not start.
+    expect(processBatch).toHaveBeenCalledTimes(1);
+
+    completeBatch(0);
+
+    await pendingBatch;
+
+    // Let the polling loop schedule its next timer.
+    await Promise.resolve();
+
+    await bootstrap.stopOutboxWorker();
+
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(processBatch).toHaveBeenCalledTimes(1);
+});
+
+
+it("should wait for the active outbox batch before disconnecting infrastructure", async () => {
+    vi.useFakeTimers();
+
+    let completeBatch;
+
+    const pendingBatch = new Promise((resolve) => {
+        completeBatch = resolve;
+    });
+
+    const processBatch = vi
+        .spyOn(CacheInvalidationWorker.prototype, "processBatch")
+        .mockImplementation(() => pendingBatch);
+
+    bootstrap.startOutboxWorker();
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(processBatch).toHaveBeenCalledTimes(1);
+
+    const shutdownPromise = bootstrap.stop();
+
+    // Shutdown must wait for the active worker.
+    expect(redisClient.disconnect).not.toHaveBeenCalled();
+    expect(databaseClient.disconnect).not.toHaveBeenCalled();
+
+    completeBatch(1);
+
+    await shutdownPromise;
+
+    expect(redisClient.disconnect).toHaveBeenCalledTimes(1);
+    expect(databaseClient.disconnect).toHaveBeenCalledTimes(1);
+    expect(bootstrap.cacheInvalidationWorker).toBeNull();
+});
+
 })
 
 // SRP — ApplicationBootstrap owns application lifecycle orchestration.

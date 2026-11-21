@@ -23,6 +23,21 @@ jobs:
           --health-timeout 3s
           --health-retries 10
 
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: criczone_test
+          POSTGRES_PASSWORD: criczone_test_password
+          POSTGRES_DB: criczone_resilience
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U criczone_test -d criczone_resilience"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+
     defaults:
       run:
         working-directory: server
@@ -30,6 +45,8 @@ jobs:
     env:
       NODE_ENV: test
       REDIS_URL: redis://127.0.0.1:56379
+      TEST_REDIS_URL: redis://127.0.0.1:56379
+      TEST_DATABASE_URL:  postgresql://criczone_test:criczone_test_password@127.0.0.1:5432/criczone_resilience
 
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +59,40 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Apply isolated PostgreSQL outbox migration
+        run: |
+          node --input-type=module -e '
+          import fs from "node:fs";
+          import pg from "pg";
+
+          const db = new pg.Client({
+            connectionString: process.env.TEST_DATABASE_URL
+          });
+
+          try {
+            await db.connect();
+
+            const sql = fs.readFileSync(
+              "database/migrations/001_create_cache_invalidation_outbox.sql",
+              "utf8"
+            );
+
+            await db.query(sql);
+
+            const result = await db.query(
+              "SELECT to_regclass('\''public.cache_invalidation_outbox'\'') AS table_name"
+            );
+
+            if (!result.rows[0]?.table_name) {
+              throw new Error("Outbox migration verification failed");
+            }
+
+            console.log("PASS: Outbox migration applied");
+          } finally {
+            await db.end();
+          }
+          '
 
       - name: Verify Valkey connectivity and cache operations
         run: |
@@ -179,11 +230,10 @@ jobs:
             "ms"
           );
           '
-      
+
       - name: Verify PostgreSQL fallback and cache consistency
-        env:
-          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
         run: node benchmarks/resilience/valkey/valkey-consistency.js
+
 
       - name: Validate consistency report
         run: |
@@ -197,34 +247,71 @@ jobs:
             throw new Error("Consistency report missing");
           }
 
-          const r = JSON.parse(fs.readFileSync(path, "utf8"));
+          const r = JSON.parse(
+            fs.readFileSync(path, "utf8")
+          );
 
-          for (const field of [
+          const requiredFields = [
             "baselineHealthy",
             "cacheInitiallyPopulated",
             "outageDetected",
+            "invalidationPersisted",
             "fallbackReadFromPostgres",
-            "cacheWriteFailureLogged",
+            "cacheWriteSkippedWhilePending",
             "redisReconnected",
+            "staleCachePreservedBeforeWorker",
+            "pendingReadBypassedCache",
+            "workerProcessed",
+            "staleCacheRemoved",
+            "outboxCompleted",
+            "outboxConsistencyPassed",
             "repairSucceeded",
-            "automaticConsistencyPassed",
             "passed"
-          ]) {
+          ];
+
+          for (const field of requiredFields) {
             if (r[field] !== true) {
-              throw new Error(`Consistency check failed: ${field}`);
+              throw new Error(
+                `Consistency check failed: ${field}`
+              );
             }
           }
 
-          console.log("PASS: PostgreSQL fallback and consistency");
+          if (
+            !Number.isInteger(r.repositoryReads) ||
+            r.repositoryReads < 1
+          ) {
+            throw new Error("Invalid PostgreSQL read count");
+          }
+
+          if (
+            !Number.isInteger(r.cacheSetCalls) ||
+            r.cacheSetCalls < 1
+          ) {
+            throw new Error("Invalid cache SET count");
+          }
+
+          if (
+            !Array.isArray(r.failures) ||
+            r.failures.length !== 0
+          ) {
+            throw new Error("Consistency benchmark reported failures");
+          }
+
+          console.log(
+            "PASS: PostgreSQL fallback and automatic cache consistency"
+          );
+
+          console.log(
+            JSON.stringify({
+              repositoryReads: r.repositoryReads,
+              cacheSetCalls: r.cacheSetCalls,
+              workerProcessed: r.workerProcessed,
+              outboxConsistencyPassed: r.outboxConsistencyPassed
+            }, null, 2)
+          );
           '
 
-      - name: Restore isolated Valkey container
-        if: always()
-        run: |
-          IDS=$(docker ps -aq --filter "publish=56379")
-          if [ -n "$IDS" ]; then
-            docker start $IDS || true
-          fi
 
       - name: Upload benchmark report
         if: always()
