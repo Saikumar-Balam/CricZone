@@ -10,15 +10,38 @@ import fs from "node:fs";
 import MatchService from "../../../src/services/MatchService.js";
 import RedisCache from "../../../src/cache/RedisCache.js";
 import { CacheKeys } from "../../../src/cache/CacheKeys.js";
+import CacheInvalidationWorker from
+  "../../../src/workers/CacheInvalidationWorker.js";
+import PostgresCacheInvalidationRepository from
+  "../../../src/repositories/postgres/PostgresCacheInvalidationRepository.js";
 
 const REDIS_URL = "redis://127.0.0.1:56379";
+
+const testDatabaseUrl = new URL(
+  process.env.TEST_DATABASE_URL ||
+    "postgresql://invalid@invalid/invalid"
+);
+
+if (
+  !["127.0.0.1", "localhost"].includes(testDatabaseUrl.hostname) ||
+  testDatabaseUrl.port !== "5432" ||
+  testDatabaseUrl.pathname !== "/criczone_resilience"
+) {
+  throw new Error(
+    "Resilience benchmark requires the isolated CI PostgreSQL database"
+  );
+}
+
 const OUTPUT =
   "benchmarks/resilience/valkey/reports/consistency.json";
 
+// This benchmark intentionally controls a Docker container.
+// It must run only in the isolated GitHub Actions test setup.
 if (
   process.env.GITHUB_ACTIONS !== "true" ||
   process.env.NODE_ENV !== "test" ||
   process.env.REDIS_URL !== REDIS_URL ||
+  process.env.TEST_REDIS_URL !== REDIS_URL ||
   !process.env.TEST_DATABASE_URL ||
   (
     process.env.DATABASE_URL &&
@@ -29,7 +52,9 @@ if (
 }
 
 function assert(condition, message) {
-  if (!condition) throw new Error(message);
+  if (!condition) {
+    throw new Error(message);
+  }
 }
 
 function docker(...args) {
@@ -40,10 +65,13 @@ function docker(...args) {
 }
 
 async function waitFor(predicate, timeoutMs) {
-  const started = performance.now();
+  const start = performance.now();
 
-  while (performance.now() - started < timeoutMs) {
-    if (predicate()) return true;
+  while (performance.now() - start < timeoutMs) {
+    if (predicate()) {
+      return true;
+    }
+
     await sleep(50);
   }
 
@@ -57,9 +85,14 @@ function findValkeyContainer() {
     "publish=56379",
     "--format",
     "{{.ID}}"
-  ).split("\n").filter(Boolean);
+  )
+    .split("\n")
+    .filter(Boolean);
 
-  assert(ids.length === 1, "Expected one Valkey container");
+  assert(
+    ids.length === 1,
+    "Expected exactly one isolated Valkey container"
+  );
 
   const image = docker(
     "inspect",
@@ -70,19 +103,19 @@ function findValkeyContainer() {
 
   assert(
     image === "valkey/valkey:8-alpine",
-    "Unexpected Docker image"
+    "Unexpected Docker container image"
   );
 
   return ids[0];
 }
 
 const runId = randomUUID();
+
 const matchId = Math.floor(
   900000000 + Math.random() * 99999999
 );
-const cacheKey = CacheKeys.matchById(matchId);
 
-const containerId = findValkeyContainer();
+const cacheKey = CacheKeys.matchById(matchId);
 
 const db = new pg.Client({
   connectionString: process.env.TEST_DATABASE_URL,
@@ -101,10 +134,14 @@ const redis = createClient({
 });
 
 const warnings = [];
+
 let reconnectEvents = 0;
 let readyEvents = 0;
 let repositoryReads = 0;
+let cacheSetCalls = 0;
+
 let restoreRequired = false;
+let dbConnected = false;
 
 redis.on("error", () => {});
 redis.on("reconnecting", () => reconnectEvents++);
@@ -119,16 +156,26 @@ const cache = new RedisCache(redis, {
   }
 });
 
-// PostgreSQL-backed test repository.
-// Uses the same findById interface as CricZone.
-const repository = {
+// Track cache SET attempts.
+const originalCacheSet = cache.set.bind(cache);
+
+cache.set = async (...args) => {
+  cacheSetCalls++;
+  return originalCacheSet(...args);
+};
+
+// Uses a temporary table instead of production match records.
+// The real MatchService calls this repository through findById.
+const matchRepository = {
   async findById(id) {
     repositoryReads++;
 
     const result = await db.query(
-      `SELECT payload
-       FROM criczone_resilience_matches
-       WHERE id = $1`,
+      `
+        SELECT payload
+        FROM criczone_resilience_matches
+        WHERE id = $1
+      `,
       [id]
     );
 
@@ -136,36 +183,109 @@ const repository = {
   }
 };
 
-// This is the actual CricZone service.
-const service = new MatchService(repository, cache);
+const invalidationRepository =
+  new PostgresCacheInvalidationRepository(db);
+
+const matchService = new MatchService(
+  matchRepository,
+  cache,
+  invalidationRepository
+);
+
+// This adapter reuses the benchmark's database connection.
+// Safe only for this sequential single-client test.
+// A production worker should use a PostgreSQL connection pool.
+const workerDatabase = {
+  async getClient() {
+    return {
+      query: (...args) => db.query(...args),
+      release() {}
+    };
+  },
+
+  query: (...args) => db.query(...args)
+};
+
+const worker = new CacheInvalidationWorker(
+  workerDatabase,
+  redis,
+  {
+    info() {},
+
+    error(message, details) {
+      warnings.push({
+        message,
+        errorMessage: details?.errorMessage
+      });
+    }
+  }
+);
 
 const report = {
   module: "25.7.2.6",
-  scenario: "postgres_fallback_and_cache_consistency",
+  scenario: "transactional_outbox_cache_consistency",
+
   runId,
+
   baselineHealthy: false,
   cacheInitiallyPopulated: false,
+
   outageDetected: false,
+  invalidationPersisted: false,
+
   fallbackReadFromPostgres: false,
-  cacheWriteFailureLogged: false,
+  cacheWriteSkippedWhilePending: false,
+
   redisReconnected: false,
-  staleReadAfterRecovery: null,
-  automaticConsistencyPassed: false,
+  staleCachePreservedBeforeWorker: false,
+  pendingReadBypassedCache: false,
+
+  workerProcessed: false,
+  staleCacheRemoved: false,
+  outboxCompleted: false,
+
+  outboxConsistencyPassed: false,
   repairSucceeded: false,
+
   repositoryReads: 0,
+  cacheSetCalls: 0,
+
   warnings: [],
   failures: [],
+
   passed: false
 };
 
+let containerId = null;
+
 try {
+  containerId = findValkeyContainer();
+
   await db.connect();
+  dbConnected = true;
+
+  const tableCheck = await db.query(
+    `
+      SELECT to_regclass(
+        'public.cache_invalidation_outbox'
+      ) AS table_name
+    `
+  );
+
+  assert(
+    tableCheck.rows[0]?.table_name != null,
+    "Outbox migration missing from isolated test database"
+  );
+
   await redis.connect();
 
-  assert(await redis.ping() === "PONG", "Valkey unhealthy");
+  assert(
+    await redis.ping() === "PONG",
+    "Valkey baseline health check failed"
+  );
+
   report.baselineHealthy = true;
 
-  // Temporary table exists only in this PostgreSQL session.
   await db.query(`
     CREATE TEMP TABLE criczone_resilience_matches (
       id BIGINT PRIMARY KEY,
@@ -173,14 +293,14 @@ try {
     )
   `);
 
-  const original = {
+  const originalMatch = {
     id: matchId,
     runs: 100,
     wickets: 2,
     version: 1
   };
 
-  const updated = {
+  const updatedMatch = {
     id: matchId,
     runs: 104,
     wickets: 2,
@@ -188,66 +308,133 @@ try {
   };
 
   await db.query(
-    `INSERT INTO criczone_resilience_matches
-     (id, payload) VALUES ($1, $2::jsonb)`,
-    [matchId, JSON.stringify(original)]
+    `
+      INSERT INTO criczone_resilience_matches (
+        id,
+        payload
+      )
+      VALUES ($1, $2::jsonb)
+    `,
+    [
+      matchId,
+      JSON.stringify(originalMatch)
+    ]
   );
 
-  // 1. Populate Valkey through the real MatchService.
-  const firstRead = await service.getMatchById(matchId);
+  const initialRead =
+    await matchService.getMatchById(matchId);
 
-  assert(firstRead.version === 1, "Initial read incorrect");
+  assert(
+    initialRead.version === 1,
+    "Initial PostgreSQL read returned incorrect data"
+  );
 
-  const cached = await redis.get(cacheKey);
+  const cachedRaw = await redis.get(cacheKey);
 
   report.cacheInitiallyPopulated =
-    JSON.parse(cached).version === 1;
+    cachedRaw !== null &&
+    JSON.parse(cachedRaw).version === 1;
 
-  assert(report.cacheInitiallyPopulated, "Cache not populated");
+  assert(
+    report.cacheInitiallyPopulated,
+    "Initial cache population failed"
+  );
 
-  // 2. Stop isolated Valkey.
   restoreRequired = true;
-  docker("stop", "--time", "1", containerId);
+
+  docker(
+    "stop",
+    "--time",
+    "1",
+    containerId
+  );
 
   report.outageDetected = await waitFor(
     () => !redis.isReady && reconnectEvents > 0,
     5000
   );
 
-  assert(report.outageDetected, "Outage not detected");
+  assert(
+    report.outageDetected,
+    "Valkey outage was not detected"
+  );
 
-  // 3. Simulate authoritative PostgreSQL data changing.
-  await db.query(
-    `UPDATE criczone_resilience_matches
-     SET payload = $2::jsonb
-     WHERE id = $1`,
-    [matchId, JSON.stringify(updated)]
+  // Simulates recordBall() transaction semantics using
+  // a temporary match table and the real outbox table.
+  //
+  // The data update and invalidation event must commit
+  // together or roll back together.
+  await db.query("BEGIN");
+
+  try {
+    await db.query(
+      `
+        UPDATE criczone_resilience_matches
+        SET payload = $2::jsonb
+        WHERE id = $1
+      `,
+      [
+        matchId,
+        JSON.stringify(updatedMatch)
+      ]
+    );
+
+    await db.query(
+      `
+        INSERT INTO public.cache_invalidation_outbox (
+          event_id,
+          match_id,
+          cache_keys,
+          status
+        )
+        VALUES ($1, $2, $3::jsonb, 'PENDING')
+      `,
+      [
+        runId,
+        matchId,
+        JSON.stringify([cacheKey])
+      ]
+    );
+
+    await db.query("COMMIT");
+  } catch (error) {
+    await db.query("ROLLBACK");
+    throw error;
+  }
+
+  report.invalidationPersisted =
+    await invalidationRepository.hasPendingInvalidation(
+      matchId
+    );
+
+  assert(
+    report.invalidationPersisted,
+    "Outbox invalidation event was not persisted"
   );
 
   const readsBeforeFallback = repositoryReads;
+  const writesBeforeFallback = cacheSetCalls;
 
-  // 4. CricZone must read from PostgreSQL while Redis is down.
-  const fallback = await service.getMatchById(matchId);
+  const fallback =
+    await matchService.getMatchById(matchId);
 
   report.fallbackReadFromPostgres =
     fallback.version === 2 &&
     repositoryReads > readsBeforeFallback;
 
-  report.cacheWriteFailureLogged = warnings.some(
-    warning => warning.message === "Redis cache SET failed"
-  );
+  report.cacheWriteSkippedWhilePending =
+    cacheSetCalls === writesBeforeFallback;
 
   assert(
     report.fallbackReadFromPostgres,
-    "PostgreSQL fallback returned incorrect data"
+    "PostgreSQL fallback returned stale data"
   );
 
   assert(
-    report.cacheWriteFailureLogged,
-    "Expected cache SET failure warning missing"
+    report.cacheWriteSkippedWhilePending,
+    "Cache write attempted while invalidation was pending"
   );
 
-  // 5. Restart Valkey.
   docker("start", containerId);
 
   report.redisReconnected = await waitFor(
@@ -255,38 +442,127 @@ try {
     15000
   );
 
-  assert(report.redisReconnected, "Redis failed to reconnect");
+  assert(
+    report.redisReconnected,
+    "Valkey failed to reconnect"
+  );
 
-  // 6. Check whether the service returns stale cached data.
-  const afterRecovery =
-    await service.getMatchById(matchId);
+  assert(
+    await redis.ping() === "PONG",
+    "Valkey PING failed after recovery"
+  );
 
-  report.staleReadAfterRecovery =
-    afterRecovery.version !== 2;
+  const staleRaw = await redis.get(cacheKey);
 
-  report.automaticConsistencyPassed =
-    !report.staleReadAfterRecovery;
+  report.staleCachePreservedBeforeWorker =
+    staleRaw !== null &&
+    JSON.parse(staleRaw).version === 1;
 
-  // 7. Verify that explicit invalidation repairs the cache.
-  await cache.delete(cacheKey);
+  assert(
+    report.staleCachePreservedBeforeWorker,
+    "Expected stale version 1 before invalidation"
+  );
 
-  const repaired = await service.getMatchById(matchId);
+  const readsBeforePendingCheck = repositoryReads;
+  const writesBeforePendingCheck = cacheSetCalls;
 
-  const repairedCache = await cache.get(cacheKey);
+  const pendingRead =
+    await matchService.getMatchById(matchId);
+
+  report.pendingReadBypassedCache =
+    pendingRead.version === 2 &&
+    repositoryReads > readsBeforePendingCheck &&
+    cacheSetCalls === writesBeforePendingCheck;
+
+  assert(
+    report.pendingReadBypassedCache,
+    "Pending invalidation did not bypass stale cache"
+  );
+
+  // The stale value should remain untouched until the worker.
+  assert(
+    JSON.parse(await redis.get(cacheKey)).version === 1,
+    "Unexpected cache modification before worker execution"
+  );
+
+  report.workerProcessed =
+    await worker.processOne();
+
+  assert(
+    report.workerProcessed,
+    "Outbox worker failed to process pending event"
+  );
+
+  report.staleCacheRemoved =
+    (await redis.get(cacheKey)) === null;
+
+  assert(
+    report.staleCacheRemoved,
+    "Worker failed to remove stale cache key"
+  );
+
+  report.outboxCompleted =
+    !(
+      await invalidationRepository.hasPendingInvalidation(
+        matchId
+      )
+    );
+
+  assert(
+    report.outboxCompleted,
+    "Outbox invalidation remains pending"
+  );
+
+  const readsBeforeRepair = repositoryReads;
+
+  const freshRead =
+    await matchService.getMatchById(matchId);
+
+  const freshCached =
+    await cache.get(cacheKey);
 
   report.repairSucceeded =
-    repaired.version === 2 &&
-    repairedCache?.version === 2;
+    freshRead.version === 2 &&
+    freshCached?.version === 2 &&
+    repositoryReads > readsBeforeRepair;
 
-  assert(report.repairSucceeded, "Cache repair failed");
+  assert(
+    report.repairSucceeded,
+    "Fresh cache population failed"
+  );
+
+  const readsBeforeFinalHit = repositoryReads;
+
+  const finalRead =
+    await matchService.getMatchById(matchId);
+
+  assert(
+    finalRead.version === 2,
+    "Final read returned stale data"
+  );
+
+  assert(
+    repositoryReads === readsBeforeFinalHit,
+    "Expected a cache hit after successful recovery"
+  );
+
+  // Tests consistency with a directly invoked worker,
+  // not background polling.
+  report.outboxConsistencyPassed =
+    report.invalidationPersisted &&
+    report.pendingReadBypassedCache &&
+    report.workerProcessed &&
+    report.staleCacheRemoved &&
+    report.outboxCompleted &&
+    report.repairSucceeded;
 
 } catch (error) {
   report.failures.push(error.message);
 
 } finally {
-  // Restore Valkey even if a test fails.
+  // Restore the isolated Valkey container.
   try {
-    if (restoreRequired) {
+    if (restoreRequired && containerId) {
       const running = docker(
         "inspect",
         "--format",
@@ -299,26 +575,68 @@ try {
       }
     }
   } catch (error) {
-    report.failures.push(`Cleanup: ${error.message}`);
+    report.failures.push(
+      `Valkey cleanup: ${error.message}`
+    );
   }
 
+  // Cleanup must wait for Valkey recovery.
   try {
-    if (redis.isReady) {
+    if (report.cacheInitiallyPopulated) {
+      const ready = await waitFor(
+        () => redis.isReady,
+        15000
+      );
+
+      assert(
+        ready,
+        "Valkey did not recover in time for key cleanup"
+      );
+
       await redis.del(cacheKey);
     }
-  } catch {
-    // Test cleanup is best-effort.
+  } catch (error) {
+    report.failures.push(
+      `Redis key cleanup: ${error.message}`
+    );
   }
 
-  if (redis.isOpen) redis.destroy();
+  // Close the Redis client.
+  if (redis.isOpen) {
+    redis.destroy();
+  }
 
+  // Remove only this benchmark's outbox record.
   try {
-    await db.end();
+    if (dbConnected) {
+      await db.query(
+        `
+          DELETE FROM public.cache_invalidation_outbox
+          WHERE event_id = $1
+            AND match_id = $2
+        `,
+        [runId, matchId]
+      );
+    }
   } catch (error) {
-    report.failures.push(`Database cleanup: ${error.message}`);
+    report.failures.push(
+      `Outbox cleanup: ${error.message}`
+    );
+  }
+
+  // Close PostgreSQL.
+  try {
+    if (dbConnected) {
+      await db.end();
+    }
+  } catch (error) {
+    report.failures.push(
+      `Database cleanup: ${error.message}`
+    );
   }
 
   report.repositoryReads = repositoryReads;
+  report.cacheSetCalls = cacheSetCalls;
   report.warnings = warnings;
 
   report.passed =
@@ -326,10 +644,16 @@ try {
     report.baselineHealthy &&
     report.cacheInitiallyPopulated &&
     report.outageDetected &&
+    report.invalidationPersisted &&
     report.fallbackReadFromPostgres &&
-    report.cacheWriteFailureLogged &&
+    report.cacheWriteSkippedWhilePending &&
     report.redisReconnected &&
-    report.automaticConsistencyPassed &&
+    report.staleCachePreservedBeforeWorker &&
+    report.pendingReadBypassedCache &&
+    report.workerProcessed &&
+    report.staleCacheRemoved &&
+    report.outboxCompleted &&
+    report.outboxConsistencyPassed &&
     report.repairSucceeded;
 
   fs.mkdirSync(

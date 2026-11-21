@@ -95,6 +95,17 @@ jobs:
         run: |
           psql -v ON_ERROR_STOP=1 -c "DROP SCHEMA IF EXISTS public CASCADE;"
           psql -v ON_ERROR_STOP=1 -f database/schema/schema.sql
+          
+      - name: Apply PostgreSQL outbox migration
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: criczone
+          PGPASSWORD: criczone_ci_password
+          PGDATABASE: criczone_test
+        run: |
+          psql -v ON_ERROR_STOP=1 -f database/migrations/001_create_cache_invalidation_outbox.sql
+          psql -v ON_ERROR_STOP=1 -c "SELECT 1 / (CASE WHEN to_regclass('public.cache_invalidation_outbox') IS NOT NULL THEN 1 ELSE 0 END) AS outbox_check;"
 
       - name: Seed PostgreSQL test database
         env:

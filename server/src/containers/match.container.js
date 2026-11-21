@@ -4,10 +4,19 @@ import MatchController from "../controllers/MatchController.js"
 import databaseClient from "./database.container.js"
 import MatchRequestValidator from "../validators/MatchRequestValidator.js"
 import MatchIdValidationMiddleware from "../middleware/MatchIdValidationMiddleware.js"
+import PostgresCacheInvalidationRepository from
+  "../repositories/postgres/PostgresCacheInvalidationRepository.js";
 import { redisCache } from "./redis.container.js"
 
 const matchRepository = new PostgresMatchRepository(databaseClient)
-const matchService = new MatchService(matchRepository, redisCache)
+const invalidationRepository =
+  new PostgresCacheInvalidationRepository(databaseClient);
+
+const matchService = new MatchService(
+  matchRepository,
+  redisCache,
+  invalidationRepository
+);
 const matchController = new MatchController(matchService)
 
 const matchValidator = new MatchRequestValidator()

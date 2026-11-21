@@ -2,18 +2,18 @@
 
 import { createWebSocketInfrastructure } from "../containers/websocket.container.js";
 import { KafkaTopics } from "../messaging/KafkaTopics.js";
+import CacheInvalidationWorker from "../workers/CacheInvalidationWorker.js";
 import http from "node:http";
 import PostgresScorecardRepository from "../repositories/postgres/postgresScorecardRepository.js";
 import RedisLiveCache from "../cache/redis/RedisLiveCache.js";
 import LiveUpdateService from "../services/LiveUpdateService.js";
 import { logger } from "../containers/logger.container.js";
-import LiveBallEventHandler from "../messaging/handlers/LiveBallEventHandler.js"
+import LiveBallEventHandler from "../messaging/handlers/LiveBallEventHandler.js";
 import HealthService from "../health/HealthService.js";
 import HealthController from "../controllers/HealthController.js";
 import createHealthRouter from "../routes/health.route.js";
 import { metrics } from "../containers/metrics.container.js";
 import withTimeout from "../utils/withTimeout.js";
-
 
 export default class ApplicationBootstrap {
   constructor(
@@ -26,48 +26,139 @@ export default class ApplicationBootstrap {
     kafkaHealthChecker,
     port,
     redisUrl,
-    corsAllowedOrigins
+    corsAllowedOrigins,
   ) {
     this.app = app;
     this.databaseClient = databaseClient;
     this.redisClient = redisClient;
     this.kafkaProducer = kafkaProducer;
     this.eventConsumer = eventConsumer;
-    this.kafkaAdmin = kafkaAdmin
-    this.kafkaHealthChecker = kafkaHealthChecker
+    this.kafkaAdmin = kafkaAdmin;
+    this.kafkaHealthChecker = kafkaHealthChecker;
     this.port = port;
-    this.redisUrl = redisUrl
-    this.corsAllowedOrigins = corsAllowedOrigins
+    this.redisUrl = redisUrl;
+    this.corsAllowedOrigins = corsAllowedOrigins;
     this.server = null;
-    this.io = null
-    this.webSocketGateway = null
-    this.socketIOPubClient = null
-    this.socketIOSubClient = null
+    this.io = null;
+    this.webSocketGateway = null;
+    this.socketIOPubClient = null;
+    this.socketIOSubClient = null;
+    this.cacheInvalidationWorker = null;
+    this.outboxTimer = null;
+    this.outboxInFlight = null;
+    this.outboxStopping = false;
   }
-  registerShutdownHandlers()
-  {
-    let isShuttingDown = false
-    const shutdown = async(signal) => {
-      if(isShuttingDown)
-      {
-        return 
+  registerShutdownHandlers() {
+    let isShuttingDown = false;
+    const shutdown = async (signal) => {
+      if (isShuttingDown) {
+        return;
       }
-      isShuttingDown = true 
-      console.log(`${signal} received. Shutting down gracefully...`)
+      isShuttingDown = true;
+      console.log(`${signal} received. Shutting down gracefully...`);
       try {
-        await this.stop()
-        console.log("CricZone shutdown completed")
-        process.exit(0)
+        await this.stop();
+        console.log("CricZone shutdown completed");
+        process.exit(0);
+      } catch (error) {
+        console.error("Graceful shutdown failed:", error.message);
+        process.exit(1);
       }
-      catch(error)
-      {
-        console.error("Graceful shutdown failed:", error.message)
-        process.exit(1)
+    };
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGINT", () => shutdown("SIGINT"));
+  }
+  startOutboxWorker() {
+  if (this.cacheInvalidationWorker || this.outboxStopping) {
+    return;
+  }
+
+  this.cacheInvalidationWorker = new CacheInvalidationWorker(
+    this.databaseClient,
+    this.redisClient,
+    logger
+  );
+
+  const pollIntervalMs = 1000;
+  const batchSize = 50;
+
+  const poll = async () => {
+    this.outboxTimer = null;
+
+    if (this.outboxStopping) {
+      return;
+    }
+
+    const operation = this.cacheInvalidationWorker.processBatch(batchSize);
+    this.outboxInFlight = operation;
+
+    try {
+      await operation;
+    } catch (error) {
+      logger.error("Cache invalidation polling failed", {
+        errorMessage: error.message
+      });
+    } finally {
+      this.outboxInFlight = null;
+
+      if (!this.outboxStopping) {
+        this.outboxTimer = setTimeout(poll, pollIntervalMs);
+        this.outboxTimer.unref?.();
       }
     }
-    process.on("SIGTERM", () => shutdown("SIGTERM"))
-    process.on("SIGINT", () => shutdown("SIGINT"))
+  };
+
+  this.outboxTimer = setTimeout(poll, 0);
+  this.outboxTimer.unref?.();
+}
+
+
+async stopOutboxWorker() {
+  this.outboxStopping = true;
+
+  if (this.outboxTimer !== null) {
+    clearTimeout(this.outboxTimer);
+    this.outboxTimer = null;
   }
+
+  const inFlight = this.outboxInFlight;
+
+  if (!inFlight) {
+    this.cacheInvalidationWorker = null;
+    return;
+  }
+
+  const shutdownTimeoutMs = 15000;
+  let timeoutHandle;
+
+  try {
+    await Promise.race([
+      inFlight,
+      new Promise((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(
+            new Error(
+              `Cache invalidation worker did not stop within ${shutdownTimeoutMs}ms`
+            )
+          );
+        }, shutdownTimeoutMs);
+      })
+    ]);
+
+    this.cacheInvalidationWorker = null;
+  } catch (error) {
+    // The worker may still own an active PostgreSQL transaction.
+    // Do not clear its reference or pretend it has stopped.
+    logger.error("Cache invalidation worker shutdown deadline exceeded", {
+      errorMessage: error.message
+    });
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
   async start() {
     await this.databaseClient.connect();
     try {
@@ -77,30 +168,50 @@ export default class ApplicationBootstrap {
     }
 
     await this.kafkaProducer.connect();
-    await this.kafkaAdmin.connect()
+    await this.kafkaAdmin.connect();
 
     // /health/readiness wirirng
-    const healthService = new HealthService(this.databaseClient, this.redisClient, this.kafkaHealthChecker)
-    const healthController = new HealthController(healthService)
-    const healthRouter = createHealthRouter(healthController)
+    const healthService = new HealthService(
+      this.databaseClient,
+      this.redisClient,
+      this.kafkaHealthChecker,
+    );
+    const healthController = new HealthController(healthService);
+    const healthRouter = createHealthRouter(healthController);
 
-    this.app.use("/", healthRouter)
+    this.app.use("/", healthRouter);
 
     // http server creation
     this.server = http.createServer(this.app);
 
     // create websocket infrastructure
-    const { io, webSocketGateway, pubClient, subClient } = await createWebSocketInfrastructure(this.server, this.redisUrl, this.corsAllowedOrigins);
+    const { io, webSocketGateway, pubClient, subClient } =
+      await createWebSocketInfrastructure(
+        this.server,
+        this.redisUrl,
+        this.corsAllowedOrigins,
+      );
     this.io = io;
     this.webSocketGateway = webSocketGateway;
-    this.socketIOPubClient = pubClient
-    this.socketIOSubClient = subClient
+    this.socketIOPubClient = pubClient;
+    this.socketIOSubClient = subClient;
 
-    const scorecardRepository = new PostgresScorecardRepository(this.databaseClient)
-    const liveCache = new  RedisLiveCache(this.redisClient)
-    const liveUpdateService = new LiveUpdateService(scorecardRepository, liveCache, webSocketGateway, logger, metrics)
+    const scorecardRepository = new PostgresScorecardRepository(
+      this.databaseClient,
+    );
+    const liveCache = new RedisLiveCache(this.redisClient);
+    const liveUpdateService = new LiveUpdateService(
+      scorecardRepository,
+      liveCache,
+      webSocketGateway,
+      logger,
+      metrics,
+    );
 
-    const liveBallEventHandler = new LiveBallEventHandler(liveUpdateService, logger)
+    const liveBallEventHandler = new LiveBallEventHandler(
+      liveUpdateService,
+      logger,
+    );
 
     await this.eventConsumer.connect();
 
@@ -108,155 +219,165 @@ export default class ApplicationBootstrap {
       KafkaTopics.LIVE_BALL_EVENTS,
       liveBallEventHandler.handle,
     );
+    this.startOutboxWorker();
 
     this.server.listen(this.port, () => {
       console.log(`CricZone API Running on ${this.port}`);
     });
-    this.registerShutdownHandlers()
+    this.registerShutdownHandlers();
   }
 
   async stop() {
-    const errors = []
+    const errors = [];
+
+try {
+  await this.stopOutboxWorker();
+} catch (error) {
+  logger.error("Cache invalidation worker shutdown failed", {
+    errorMessage: error.message,
+    action: "Infrastructure teardown aborted because an outbox operation may still be active"
+  });
+
+  // Fail closed. Do not disconnect PostgreSQL or Redis
+  // while the worker may still be processing an event.
+  throw error;
+}
+
     if (this.io) {
-      console.log("1. Closing WebSocket and http server...")
+      console.log("1. Closing WebSocket and http server...");
       try {
-      await this.io.close();
-      console.log("1. websocket connection and http server are closed")
-      }
-      catch(error)
-      {
-        console.log("1. websocket/HTTP connection closed failed")
-        errors.push({resource: "WebSocket", error})
+        await this.io.close();
+        console.log("1. websocket connection and http server are closed");
+      } catch (error) {
+        console.log("1. websocket/HTTP connection closed failed");
+        errors.push({ resource: "WebSocket", error });
       }
     }
     // stop accepting http traffic
-    else if(this.server)
-      {
-      console.log("1. Closing HTTP server...")
+    else if (this.server) {
+      console.log("1. Closing HTTP server...");
       try {
-      await new Promise((resolve, reject) => {
-        this.server.close((error) =>{
-          if(error)
-          {
-            reject(error)
-            return
-          }
-          resolve()
-        })
-      })
-       console.log("1. HTTP server closed")
+        await new Promise((resolve, reject) => {
+          this.server.close((error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
+        console.log("1. HTTP server closed");
+      } catch (error) {
+        errors.push({ resource: "HTTP Server", error });
+        console.log("1. HTTP server close FAILED");
+      }
     }
-    catch(error)
-    {
-      errors.push({resource: "HTTP Server", error})
-      console.log("1. HTTP server close FAILED")
-    }
-    }
-    console.log("Closing Socket.Io Redis adapter clients...")
+    console.log("Closing Socket.Io Redis adapter clients...");
     const socketIOAdapterClients = [
       {
         name: "Socket.IO Redis subscriber",
-        client: this.socketIOSubClient
+        client: this.socketIOSubClient,
       },
       {
         name: "Socket.IO Redis publisher",
-        client: this.socketIOPubClient
-      }
-    ]
-    for(const {name, client} of socketIOAdapterClients)
-    {
-      if(!client?.isOpen)
-      {
-        continue 
+        client: this.socketIOPubClient,
+      },
+    ];
+    for (const { name, client } of socketIOAdapterClients) {
+      if (!client?.isOpen) {
+        continue;
       }
       try {
-        await withTimeout(client.quit(), 10000, `${name} disconnect`)
-        console.log(`${name} connection closed`)
-      }
-      catch(error)
-      {
-        errors.push({resource: name.error, error})
-        console.error(`${name} connection close failed:`, error.message)
+        await withTimeout(client.quit(), 10000, `${name} disconnect`);
+        console.log(`${name} connection closed`);
+      } catch (error) {
+        errors.push({ resource: name, error });
+        console.error(`${name} connection close failed:`, error.message);
       }
     }
 
     // close Kafka consumer connection
-    console.log("2. Disconnecting Event Consumer...")
-    if(this.eventConsumer)
-    {
+    console.log("2. Disconnecting Event Consumer...");
+    if (this.eventConsumer) {
       try {
-        await withTimeout(this.eventConsumer.disconnect(), 10000, "Kafka consumer disconnect")
-        console.log("2. event consumer connection closed")
-      }
-      catch(error)
-      {
-        errors.push({resource: "Kafka Consumer Disconnect", error})
-        console.error("2. event consumer connection closed fail", error.message)
+        await withTimeout(
+          this.eventConsumer.disconnect(),
+          10000,
+          "Kafka consumer disconnect",
+        );
+        console.log("2. event consumer connection closed");
+      } catch (error) {
+        errors.push({ resource: "Kafka Consumer Disconnect", error });
+        console.error(
+          "2. event consumer connection closed fail",
+          error.message,
+        );
       }
     }
-    console.log("3. Kafka Producer closing...")
+    console.log("3. Kafka Producer closing...");
     if (this.kafkaProducer) {
       try {
-      await this.kafkaProducer.disconnect();
-      console.log("3. Kafka Producer connection closed")
-      }
-      catch(error)
-      {
-        errors.push({resource: "Kafka Producer", error})
-        console.log("3. Kafka Producer connection closed failed")
+        await withTimeout(
+  this.kafkaProducer.disconnect(),
+  10000,
+  "Kafka producer disconnect"
+);
+        console.log("3. Kafka Producer connection closed");
+      } catch (error) {
+        errors.push({ resource: "Kafka Producer", error });
+        console.log("3. Kafka Producer connection closed failed");
       }
     }
 
-    console.log("4. Kafka Admin closing...")
-    if(this.kafkaAdmin)
-    {
+    console.log("4. Kafka Admin closing...");
+    if (this.kafkaAdmin) {
       try {
-        await this.kafkaAdmin.disconnect()
-        console.log("4. Kafka Admin connection closed")
-      }
-      catch(error)
-      {
-        errors.push({resource: "Kafka Admin", error})
-        console.log("4. Kafka Admin connection closed failed")
+        await withTimeout(
+  this.kafkaAdmin.disconnect(),
+  10000,
+  "Kafka admin disconnect"
+);
+        console.log("4. Kafka Admin connection closed");
+      } catch (error) {
+        errors.push({ resource: "Kafka Admin", error });
+        console.log("4. Kafka Admin connection closed failed");
       }
     }
 
-    console.log("5. redisClient closing...")
+    console.log("5. redisClient closing...");
     if (this.redisClient && this.redisClient.isOpen) {
       try {
-      await this.redisClient.disconnect();
-      console.log("5.redisClient connection closed")
-      }
-      catch(error)
-      {
-        errors.push({resource: "Redis", error})
-        console.log("5. redisClient connection closed failed")
+        await this.redisClient.disconnect();
+        console.log("5.redisClient connection closed");
+      } catch (error) {
+        errors.push({ resource: "Redis", error });
+        console.log("5. redisClient connection closed failed");
       }
     }
 
-    console.log("6. PostgreSQL closing...")
-    if(this.databaseClient)
-    {
+    console.log("6. PostgreSQL closing...");
+    if (this.databaseClient) {
       try {
-    await this.databaseClient.disconnect();
-    console.log("6. PostgreSQL connection closed")
-      }
-      catch(error)
-      {
-        errors.push({resource: "PotsgreSQL", error})
-        console.log("6. PostgreSQL connection closed failed")
+        await this.databaseClient.disconnect();
+        console.log("6. PostgreSQL connection closed");
+      } catch (error) {
+        errors.push({ resource: "PotsgreSQL", error });
+        console.log("6. PostgreSQL connection closed failed");
       }
     }
     // Report cleanup failures only after every resource received a shutdown attempt
-    if(errors.length>0)
-    {
-      for(const failure of errors)
-      {
-        console.error(`${failure.resource} shutdown failed:`, failure.error.message)
+    if (errors.length > 0) {
+      for (const failure of errors) {
+        console.error(
+          `${failure.resource} shutdown failed:`,
+          failure.error.message,
+        );
       }
-      throw new AggregateError(errors.map(failure => failure.error), "One or more resources failed to shutdown")
+      throw new AggregateError(
+        errors.map((failure) => failure.error),
+        "One or more resources failed to shutdown",
+      );
     }
-
   }
 }
 
