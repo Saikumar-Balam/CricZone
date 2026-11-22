@@ -1,0 +1,285 @@
+
+name: Combined Traffic Resilience Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      valkey_run_id:
+        description: "Valkey traffic resilience GitHub Actions run ID"
+        required: true
+        type: string
+
+      postgres_run_id:
+        description: "PostgreSQL traffic resilience GitHub Actions run ID"
+        required: true
+        type: string
+
+      kafka_run_id:
+        description: "Kafka traffic resilience GitHub Actions run ID"
+        required: true
+        type: string
+
+      websocket_run_id:
+        description: "WebSocket traffic resilience GitHub Actions run ID"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  combined-report:
+    name: Validate and Consolidate Traffic Resilience
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: server
+
+    env:
+      VALKEY_RUN_ID: ${{ inputs.valkey_run_id }}
+      POSTGRES_RUN_ID: ${{ inputs.postgres_run_id }}
+      KAFKA_RUN_ID: ${{ inputs.kafka_run_id }}
+      WEBSOCKET_RUN_ID: ${{ inputs.websocket_run_id }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+
+      - name: Verify source GitHub Actions runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          check_run() {
+            local run_id="$1"
+            local expected_workflow="$2"
+
+            if [[ ! "$run_id" =~ ^[0-9]+$ ]]; then
+              echo "Invalid run ID: $run_id"
+              exit 1
+            fi
+
+            echo "Checking run $run_id"
+
+            local metadata
+            metadata=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
+              --jq '[
+                .status,
+                .conclusion,
+                (.path | split("@")[0]),
+                (.head_repository.full_name // "")
+              ] | join("|")')
+
+            local status
+            local conclusion
+            local workflow_path
+            local source_repository
+
+            IFS='|' read -r \
+              status \
+              conclusion \
+              workflow_path \
+              source_repository <<< "$metadata"
+
+            if [[ "$status" != "completed" ]]; then
+              echo "Run $run_id is not completed"
+              exit 1
+            fi
+
+            if [[ "$conclusion" != "success" ]]; then
+              echo "Run $run_id did not succeed"
+              exit 1
+            fi
+
+            if [[ "$source_repository" != "$GITHUB_REPOSITORY" ]]; then
+              echo "Run $run_id belongs to an unexpected repository"
+              exit 1
+            fi
+
+            if [[ "$workflow_path" != ".github/workflows/$expected_workflow" && \
+                  "$workflow_path" != */.github/workflows/$expected_workflow ]]; then
+              echo "Unexpected workflow: $workflow_path"
+              echo "Expected: $expected_workflow"
+              exit 1
+            fi
+
+            echo "PASS: $expected_workflow"
+          }
+
+          check_run \
+            "$VALKEY_RUN_ID" \
+            "resilience-traffic.yml"
+
+          check_run \
+            "$POSTGRES_RUN_ID" \
+            "traffic-postgres.yml"
+
+          check_run \
+            "$KAFKA_RUN_ID" \
+            "traffic-kafka.yml"
+
+          check_run \
+            "$WEBSOCKET_RUN_ID" \
+            "traffic-websocket.yml"
+
+          echo "All four source workflow runs verified"
+
+
+      - name: Download Valkey traffic report
+        uses: actions/download-artifact@v4
+        with:
+          name: resilience-traffic-${{ inputs.valkey_run_id }}
+          run-id: ${{ inputs.valkey_run_id }}
+          github-token: ${{ github.token }}
+          path: server/benchmarks/resilience/traffic/reports
+
+
+      - name: Download PostgreSQL traffic report
+        uses: actions/download-artifact@v4
+        with:
+          name: postgres-http-traffic-${{ inputs.postgres_run_id }}
+          run-id: ${{ inputs.postgres_run_id }}
+          github-token: ${{ github.token }}
+          path: server/benchmarks/resilience/traffic/reports
+
+      - name: Download Kafka traffic report
+        uses: actions/download-artifact@v4
+        with:
+          name: kafka-http-traffic-${{ inputs.kafka_run_id }}
+          run-id: ${{ inputs.kafka_run_id }}
+          github-token: ${{ github.token }}
+          path: server/benchmarks/resilience/traffic/reports
+
+      - name: Download WebSocket traffic report
+        uses: actions/download-artifact@v4
+        with:
+          name: websocket-http-traffic-${{ inputs.websocket_run_id }}
+          run-id: ${{ inputs.websocket_run_id }}
+          github-token: ${{ github.token }}
+          path: server/benchmarks/resilience/traffic/reports
+
+      - name: Verify downloaded report files
+        run: |
+          set -euo pipefail
+
+          REPORT_DIR="benchmarks/resilience/traffic/reports"
+
+          for file in \
+            valkey-http.json \
+            postgres-http.json \
+            kafka-http.json \
+            websocket-http.json
+          do
+            if [[ ! -s "$REPORT_DIR/$file" ]]; then
+              echo "Missing or empty report: $file"
+              exit 1
+            fi
+
+            echo "Found: $file"
+          done
+
+          echo "All source reports are present"
+
+      
+
+      - name: Generate combined traffic resilience report
+        run: |
+          set -euo pipefail
+
+          node benchmarks/resilience/traffic/combined-report.js
+
+      - name: Verify combined report
+        run: |
+          node --input-type=module <<'EOFJS'
+          import fs from "node:fs";
+
+          const directory =
+            "benchmarks/resilience/traffic/reports";
+
+          const jsonPath = `${directory}/combined.json`;
+          const markdownPath = `${directory}/combined.md`;
+
+          if (!fs.existsSync(jsonPath)) {
+            throw new Error("combined.json is missing");
+          }
+
+          if (!fs.existsSync(markdownPath)) {
+            throw new Error("combined.md is missing");
+          }
+
+          const report = JSON.parse(
+            fs.readFileSync(jsonPath, "utf8")
+          );
+
+          if (report.phase !== "25.7.5.5") {
+            throw new Error("Incorrect report phase");
+          }
+
+          if (report.scenarioCount !== 4) {
+            throw new Error("Expected four scenarios");
+          }
+
+          if (report.passedScenarios !== 4) {
+            throw new Error("Not all scenarios passed");
+          }
+
+          if (report.passed !== true) {
+            throw new Error("Combined report failed");
+          }
+
+          if (
+            !Array.isArray(report.failures) ||
+            report.failures.length !== 0
+          ) {
+            throw new Error("Combined report contains failures");
+          }
+
+          const scenarios = [
+            "valkey",
+            "postgres",
+            "kafka",
+            "websocket"
+          ];
+
+          for (const name of scenarios) {
+            if (report.scenarios?.[name]?.passed !== true) {
+              throw new Error(`${name} validation failed`);
+            }
+          }
+
+          console.log(
+            "PASS: All four resilience scenarios validated"
+          );
+
+          console.log(
+            `Total requests/attempts: ${report.totalRequests}`
+          );
+          EOFJS
+
+      - name: Upload combined resilience report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: criczone-combined-traffic-report-${{ github.run_id }}
+          path: |
+            server/benchmarks/resilience/traffic/reports/combined.json
+            server/benchmarks/resilience/traffic/reports/combined.md
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Publish traffic resilience summary
+        if: success()
+        run: |
+          cat benchmarks/resilience/traffic/reports/combined.md \
+            >> "$GITHUB_STEP_SUMMARY"
