@@ -79,6 +79,71 @@ jobs:
       - name: Run broker outage and recovery benchmark
         run: node benchmarks/resilience/kafka/kafka-resilience.js
 
+      - name: Start isolated Redis for replay verification
+        run: |
+          set -euo pipefail
+
+          docker run -d \
+            --name criczone-kafka-replay-redis \
+            -p 127.0.0.1:56379:6379 \
+            redis:7-alpine
+
+          for n in $(seq 1 30); do
+            if docker exec criczone-kafka-replay-redis \
+              redis-cli ping | grep -q PONG; then
+              echo "Replay Redis ready"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          exit 1
+
+      - name: Verify Kafka replay and real Redis idempotency
+        env:
+          TEST_REDIS_URL: redis://127.0.0.1:56379
+        run: |
+          node benchmarks/resilience/kafka/kafka-idempotency-replay.js
+
+      - name: Validate replay report
+        run: |
+          node --input-type=module <<'EOFJS'
+          import fs from "node:fs";
+
+          const report = JSON.parse(
+            fs.readFileSync(
+              "benchmarks/resilience/kafka/reports/idempotency.json",
+              "utf8"
+            )
+          );
+
+          const required = [
+            "firstEventProcessed",
+            "consumerRestarted",
+            "duplicateReplayObserved",
+            "duplicateHandlerSkipped",
+            "freshEventProcessed",
+            "redisClaimSurvivedConsumerRestart",
+            "passed"
+          ];
+
+          for (const field of required) {
+            if (report[field] !== true) {
+              throw new Error(`Replay verification failed: ${field}`);
+            }
+          }
+
+          if (
+            report.handlerInvocations !== 2 ||
+            report.duplicateEventsSkipped < 1 ||
+            report.failures.length !== 0
+          ) {
+            throw new Error("Kafka replay reconciliation failed");
+          }
+
+          console.log("PASS: Kafka replay idempotency verified");
+          EOFJS
+
       - name: Validate resilience report
         if: success()
         run: |
@@ -124,7 +189,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kafka-resilience-${{ github.run_id }}
-          path: server/benchmarks/resilience/kafka/reports/recovery.json
+          path: |
+            server/benchmarks/resilience/kafka/reports/recovery.json
+            server/benchmarks/resilience/kafka/reports/idempotency.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -135,3 +202,7 @@ jobs:
       - name: Remove isolated Kafka container
         if: always()
         run: docker rm -f criczone-kafka-resilience || true
+
+      - name: Remove isolated replay Redis container
+        if: always()
+        run: docker rm -f criczone-kafka-replay-redis || true
