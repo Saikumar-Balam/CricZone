@@ -121,13 +121,21 @@ async function waitForBroker() {
   await waitFor(
     () => {
       try {
-        docker(
-          "exec",
-          CONTAINER,
-          "/opt/kafka/bin/kafka-broker-api-versions.sh",
-          "--bootstrap-server",
-          BROKER
+        execFileSync(
+          "docker",
+          [
+            "exec",
+            CONTAINER,
+            "/opt/kafka/bin/kafka-broker-api-versions.sh",
+            "--bootstrap-server",
+            BROKER
+          ],
+          {
+            stdio: "ignore",
+            timeout: 5000
+          }
         );
+
         return true;
       } catch {
         return false;
@@ -375,15 +383,27 @@ async function main() {
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 
   // Alternate independent health traffic and publishing.
-  timer = setInterval(() => {
-    if (inFlight >= 4) return;
+ timer = setInterval(() => {
+  // Do not generate new requests during transitions.
+  // This allows in-flight requests to finish.
+  if (
+    !["baseline", "outage", "recovery"].includes(phase)
+  ) {
+    return;
+  }
 
-    recordRequest("health", phase);
+  if (inFlight >= 4) {
+    return;
+  }
 
-    if (inFlight < 4) {
-      recordRequest("publish", phase);
-    }
-  }, 120);
+  const currentPhase = phase;
+
+  recordRequest("health", currentPhase);
+
+  if (inFlight < 4) {
+    recordRequest("publish", currentPhase);
+  }
+}, 120);
 
   // 1. Healthy Kafka baseline.
   await runPhase("baseline", 1800);
