@@ -1,0 +1,154 @@
+
+name: Kafka HTTP Traffic Resilience
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/traffic-kafka.yml"
+      - "server/benchmarks/resilience/traffic/**"
+
+permissions:
+  contents: read
+
+jobs:
+  kafka-traffic:
+    name: HTTP Traffic During Kafka Outage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: server
+
+    env:
+      NODE_ENV: test
+      KAFKA_TRAFFIC_BROKERS: 127.0.0.1:9092
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start isolated Kafka broker
+        run: |
+          set -euo pipefail
+
+          docker run -d \
+            --name criczone-traffic-kafka \
+            -p 127.0.0.1:9092:9092 \
+            -e KAFKA_NODE_ID=1 \
+            -e KAFKA_PROCESS_ROLES=broker,controller \
+            -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
+            -e KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+            -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://127.0.0.1:9092 \
+            -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT \
+            -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+            -e KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT \
+            -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+            -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+            -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+            -e KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0 \
+            apache/kafka:3.9.1
+
+      - name: Wait for Kafka readiness
+        run: |
+          set -euo pipefail
+
+          for n in $(seq 1 60); do
+            if docker exec criczone-traffic-kafka \
+              /opt/kafka/bin/kafka-broker-api-versions.sh \
+              --bootstrap-server 127.0.0.1:9092 \
+              >/dev/null 2>&1; then
+              echo "Kafka broker ready"
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          docker logs criczone-traffic-kafka
+          exit 1
+
+      - name: Run continuous HTTP traffic benchmark
+        run: |
+          node benchmarks/resilience/traffic/kafka-http-traffic.js
+
+      - name: Validate Kafka traffic report
+        run: |
+          node --input-type=module <<'EOFJS'
+          import fs from "node:fs";
+
+          const r = JSON.parse(
+            fs.readFileSync(
+              "benchmarks/resilience/traffic/reports/kafka-http.json",
+              "utf8"
+            )
+          );
+
+          for (const field of [
+            "isolated",
+            "baselinePublishingSucceeded",
+            "brokerStopped",
+            "publishingFailureDetected",
+            "noFalseAcknowledgements",
+            "brokerRestarted",
+            "originalProducerRecovered",
+            "independentHttpTrafficSurvived",
+            "postRecoveryPublishingSucceeded",
+            "passed"
+          ]) {
+            if (r[field] !== true) {
+              throw new Error(`Failed Kafka resilience check: ${field}`);
+            }
+          }
+
+          if (
+            r.traffic.baseline.publishes < 5 ||
+            r.traffic.outage.publishes < 5 ||
+            r.traffic.recovery.publishes < 5
+          ) {
+            throw new Error("Insufficient publishing traffic");
+          }
+
+          if (
+            r.traffic.baseline.unavailable !== 0 ||
+            r.traffic.outage.successes !== r.traffic.outage.healthRequests ||
+            r.traffic.recovery.unavailable !== 0 ||
+            r.failures.length !== 0
+          ) {
+            throw new Error("Unexpected Kafka traffic outcomes");
+          }
+
+          console.log(
+            "PASS: Kafka outage publishing behavior and HTTP recovery"
+          );
+          EOFJS
+
+      - name: Upload JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kafka-http-traffic-${{ github.run_id }}
+          path: server/benchmarks/resilience/traffic/reports/kafka-http.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Show Kafka logs on failure
+        if: failure()
+        run: docker logs criczone-traffic-kafka || true
+
+      - name: Remove isolated Kafka container
+        if: always()
+        run: docker rm -f criczone-traffic-kafka || true
