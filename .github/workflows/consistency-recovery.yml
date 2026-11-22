@@ -1,0 +1,189 @@
+
+name: PostgreSQL and Valkey Consistency Recovery
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/consistency-recovery.yml"
+      - "server/benchmarks/resilience/consistency/**"
+      - "server/src/services/MatchService.js"
+      - "server/src/cache/**"
+      - "server/src/workers/CacheInvalidationWorker.js"
+      - "server/src/repositories/postgres/**"
+      - "server/database/migrations/001_create_cache_invalidation_outbox.sql"
+
+permissions:
+  contents: read
+
+jobs:
+  consistency-recovery:
+    name: Cache Invalidation Consistency and Recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: server
+
+    env:
+      NODE_ENV: test
+      TEST_DATABASE_URL: postgresql://criczone_test:criczone_test_password@127.0.0.1:55433/criczone_resilience
+      TEST_REDIS_URL: redis://127.0.0.1:56381
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start isolated PostgreSQL and Valkey
+        run: |
+          set -euo pipefail
+
+          docker run -d \
+            --name criczone-consistency-postgres \
+            -p 127.0.0.1:55433:5432 \
+            -e POSTGRES_USER=criczone_test \
+            -e POSTGRES_PASSWORD=criczone_test_password \
+            -e POSTGRES_DB=criczone_resilience \
+            postgres:16-alpine
+
+          docker run -d \
+            --name criczone-consistency-valkey \
+            -p 127.0.0.1:56381:6379 \
+            valkey/valkey:8-alpine
+
+          for attempt in $(seq 1 60); do
+            if docker exec criczone-consistency-postgres \
+              pg_isready -U criczone_test \
+              -d criczone_resilience >/dev/null 2>&1 && \
+              docker exec criczone-consistency-valkey \
+              valkey-cli ping | grep -q PONG; then
+
+              echo "PostgreSQL and Valkey are ready"
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "Services failed to become ready"
+          exit 1
+
+      - name: Apply isolated outbox migration
+        run: |
+          node --input-type=module <<'EOFJS'
+          import fs from "node:fs";
+          import pg from "pg";
+
+          const client = new pg.Client({
+            connectionString: process.env.TEST_DATABASE_URL
+          });
+
+          try {
+            await client.connect();
+
+            const sql = fs.readFileSync(
+              "database/migrations/001_create_cache_invalidation_outbox.sql",
+              "utf8"
+            );
+
+            await client.query(sql);
+
+            const result = await client.query(
+              `SELECT to_regclass(
+                'public.cache_invalidation_outbox'
+              ) AS relation`
+            );
+
+            if (!result.rows[0]?.relation) {
+              throw new Error(
+                "Cache invalidation outbox table missing"
+              );
+            }
+
+            console.log("Outbox migration applied");
+
+          } finally {
+            await client.end();
+          }
+          EOFJS
+
+      - name: Run cache consistency recovery benchmark
+        run: |
+          node benchmarks/resilience/consistency/cache-recovery-consistency.js
+
+      - name: Validate consistency report
+        run: |
+          node --input-type=module <<'EOFJS'
+          import assert from "node:assert/strict";
+          import fs from "node:fs";
+
+          const report = JSON.parse(
+            fs.readFileSync(
+              "benchmarks/resilience/consistency/reports/cache-recovery.json",
+              "utf8"
+            )
+          );
+
+          assert.equal(report.phase, "25.7.6.1");
+          assert.equal(report.isolated, true);
+
+          for (const key of [
+            "authoritativeDatabasePreserved",
+            "staleCacheNeverServed",
+            "failedWorkerRollbackConfirmed",
+            "pendingOutboxRetained",
+            "retryCompleted",
+            "cacheRepaired",
+            "duplicateOutboxRejected",
+            "secondUpdateConsistent",
+            "passed"
+          ]) {
+            assert.equal(
+              report[key],
+              true,
+              `Failed consistency check: ${key}`
+            );
+          }
+
+          assert.equal(report.finalVersion, 3);
+          assert.equal(report.finalRuns, 110);
+          assert.deepEqual(report.failures, []);
+
+          console.log(
+            "PASS: PostgreSQL and Valkey consistency recovery"
+          );
+          EOFJS
+
+      - name: Upload consistency evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cache-consistency-recovery-${{ github.run_id }}
+          path: server/benchmarks/resilience/consistency/reports/cache-recovery.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Print service logs on failure
+        if: failure()
+        run: |
+          docker logs criczone-consistency-postgres || true
+          docker logs criczone-consistency-valkey || true
+
+      - name: Clean up isolated containers
+        if: always()
+        run: |
+          docker rm -f criczone-consistency-postgres || true
+          docker rm -f criczone-consistency-valkey || true
