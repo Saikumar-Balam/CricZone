@@ -2,6 +2,12 @@ name: Kafka Resilience Testing
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/kafka-resilience.yml"
+      - "server/benchmarks/resilience/kafka/**"
 
 permissions:
   contents: read
