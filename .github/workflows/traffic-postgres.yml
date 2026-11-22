@@ -1,0 +1,157 @@
+
+name: PostgreSQL Outage HTTP Traffic Resilience
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/traffic-postgres.yml"
+      - "server/benchmarks/resilience/traffic/**"
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-traffic:
+    name: Match HTTP Traffic During PostgreSQL Outage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: server
+
+    env:
+      NODE_ENV: test
+      TEST_DATABASE_URL: postgresql://criczone_test:criczone_test_password@127.0.0.1:55432/criczone_resilience
+      TEST_REDIS_URL: redis://127.0.0.1:56379
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start isolated PostgreSQL and Valkey
+        run: |
+          set -euo pipefail
+
+          docker run -d \
+            --name criczone-traffic-postgres \
+            -p 127.0.0.1:55432:5432 \
+            -e POSTGRES_USER=criczone_test \
+            -e POSTGRES_PASSWORD=criczone_test_password \
+            -e POSTGRES_DB=criczone_resilience \
+            postgres:16-alpine
+
+          docker run -d \
+            --name criczone-traffic-valkey \
+            -p 127.0.0.1:56379:6379 \
+            valkey/valkey:8-alpine
+
+          for n in $(seq 1 60); do
+            if docker exec criczone-traffic-postgres \
+              pg_isready -U criczone_test \
+              -d criczone_resilience >/dev/null 2>&1 && \
+              docker exec criczone-traffic-valkey \
+              valkey-cli ping | grep -q PONG; then
+              echo "Both isolated services ready"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs criczone-traffic-postgres
+          docker logs criczone-traffic-valkey
+          exit 1
+
+      - name: Run PostgreSQL outage HTTP traffic benchmark
+        run: |
+          node benchmarks/resilience/traffic/postgres-http-traffic.js
+
+      - name: Validate PostgreSQL traffic report
+        run: |
+          node --input-type=module <<'EOFJS'
+          import fs from "node:fs";
+
+          const r = JSON.parse(
+            fs.readFileSync(
+              "benchmarks/resilience/traffic/reports/postgres-http.json",
+              "utf8"
+            )
+          );
+
+          for (const key of [
+            "isolated",
+            "baselineCached",
+            "postgresStopped",
+            "outageDetected",
+            "failClosedDuringOutage",
+            "postgresRestarted",
+            "originalPoolRecovered",
+            "staleCacheBypassed",
+            "outboxRepairedCache",
+            "recoveryHealthy",
+            "passed"
+          ]) {
+            if (r[key] !== true) {
+              throw new Error(`Failed: ${key}`);
+            }
+          }
+
+          for (const phase of [
+            "baseline",
+            "outage",
+            "recovery"
+          ]) {
+            if (
+              r.traffic[phase].requests < 10 ||
+              r.traffic[phase].unexpectedResponses !== 0
+            ) {
+              throw new Error(
+                `Unexpected HTTP outcomes: ${phase}`
+              );
+            }
+          }
+
+          if (r.failures.length) {
+            throw new Error(
+              "Reported benchmark failures"
+            );
+          }
+
+          console.log(
+            "PASS: PostgreSQL outage, fail-closed traffic and recovery"
+          );
+          EOFJS
+
+      - name: Upload JSON evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-http-traffic-${{ github.run_id }}
+          path: server/benchmarks/resilience/traffic/reports/postgres-http.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Show service logs if failed
+        if: failure()
+        run: |
+          docker logs criczone-traffic-postgres || true
+          docker logs criczone-traffic-valkey || true
+
+      - name: Remove isolated services
+        if: always()
+        run: |
+          docker rm -f criczone-traffic-postgres || true
+          docker rm -f criczone-traffic-valkey || true
