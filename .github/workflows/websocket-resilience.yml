@@ -1,0 +1,125 @@
+
+name: WebSocket Resilience Testing
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/websocket-resilience.yml"
+      - "server/benchmarks/resilience/websocket/**"
+      - "server/src/websocket/**"
+
+permissions:
+  contents: read
+
+jobs:
+  websocket-resilience:
+    name: Socket.IO Restart and Reconnection
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: server
+
+    env:
+      NODE_ENV: test
+      WS_BENCH_PORT: "4005"
+      WS_BENCH_REDIS_URL: redis://127.0.0.1:56380
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start isolated Redis
+        run: |
+          set -euo pipefail
+
+          docker run -d \
+            --name criczone-websocket-redis \
+            -p 127.0.0.1:56380:6379 \
+            redis:7-alpine
+
+          for n in $(seq 1 30); do
+            if docker exec criczone-websocket-redis \
+              redis-cli ping | grep -q PONG; then
+              echo "Redis ready"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          exit 1
+
+      - name: Run WebSocket restart benchmark
+        run: |
+          node benchmarks/resilience/websocket/websocket-restart.js
+
+      - name: Validate resilience report
+        run: |
+          node --input-type=module <<'EOFJS'
+          import fs from "node:fs";
+
+          const report = JSON.parse(
+            fs.readFileSync(
+              "benchmarks/resilience/websocket/reports/restart.json",
+              "utf8"
+            )
+          );
+
+          const checks = [
+            "baselineConnected",
+            "baselineRoomJoined",
+            "baselineDelivered",
+            "serverCrashDetected",
+            "serverRestarted",
+            "clientsReconnected",
+            "roomSubscriptionsRestored",
+            "postRestartDelivered",
+            "passed"
+          ];
+
+          for (const field of checks) {
+            if (report[field] !== true) {
+              throw new Error(`WebSocket check failed: ${field}`);
+            }
+          }
+
+          if (
+            report.duplicateDeliveries !== 0 ||
+            report.failures.length !== 0
+          ) {
+            throw new Error("WebSocket recovery validation failed");
+          }
+
+          console.log("PASS: WebSocket restart and reconnection");
+          EOFJS
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: websocket-restart-${{ github.run_id }}
+          path: server/benchmarks/resilience/websocket/reports/restart.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Show Redis logs on failure
+        if: failure()
+        run: docker logs criczone-websocket-redis || true
+
+      - name: Stop isolated Redis
+        if: always()
+        run: docker rm -f criczone-websocket-redis || true
