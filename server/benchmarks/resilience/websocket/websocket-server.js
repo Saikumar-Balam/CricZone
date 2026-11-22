@@ -1,12 +1,11 @@
-
 import http from "node:http";
 import { Server } from "socket.io";
 
-import SocketConnectionHandler from "../../src/websocket/SocketConnectionHandler.js";
-import SocketIOGateway from "../../src/websocket/SocketIOGateway.js";
-import SocketIOAdapterClientFactory from "../../src/websocket/SocketIOAdapterClientFactory.js";
-import SocketIORedisAdapter from "../../src/websocket/SocketIORedisAdapter.js";
-import WebSocketRooms from "../../src/websocket/WebSocketRooms.js";
+import SocketConnectionHandler from "../../../src/websocket/SocketConnectionHandler.js";
+import SocketIOGateway from "../../../src/websocket/SocketIOGateway.js";
+import SocketIOAdapterClientFactory from "../../../src/websocket/SocketIOAdapterClientFactory.js";
+import SocketIORedisAdapter from "../../../src/websocket/SocketIORedisAdapter.js";
+import WebSocketRooms from "../../../src/websocket/WebSocketRooms.js";
 
 const PORT = Number(process.env.WS_BENCH_PORT || 4005);
 const REDIS_URL = process.env.WS_BENCH_REDIS_URL;
