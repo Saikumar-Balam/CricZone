@@ -1,0 +1,146 @@
+
+name: WebSocket Continuous Traffic Resilience
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/traffic-websocket.yml"
+      - "server/benchmarks/resilience/traffic/websocket-http-traffic.js"
+      - "server/benchmarks/resilience/websocket/**"
+      - "server/src/websocket/**"
+
+permissions:
+  contents: read
+
+jobs:
+  websocket-traffic:
+    name: Continuous WebSocket Traffic During Server Crash
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: server
+
+    env:
+      NODE_ENV: test
+      WS_BENCH_PORT: "4006"
+      WS_BENCH_REDIS_URL: redis://127.0.0.1:56380
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start isolated Redis
+        run: |
+          set -euo pipefail
+
+          docker run -d \
+            --name criczone-websocket-traffic-redis \
+            -p 127.0.0.1:56380:6379 \
+            redis:7-alpine
+
+          for n in $(seq 1 30); do
+            if docker exec criczone-websocket-traffic-redis \
+              redis-cli ping | grep -q PONG; then
+              echo "Redis is ready"
+              exit 0
+            fi
+
+            sleep 1
+          done
+
+          exit 1
+
+      - name: Run WebSocket traffic resilience benchmark
+        run: |
+          node benchmarks/resilience/traffic/websocket-http-traffic.js
+
+      - name: Validate traffic recovery report
+        run: |
+          node --input-type=module <<'EOFJS'
+          import fs from "node:fs";
+
+          const r = JSON.parse(
+            fs.readFileSync(
+              "benchmarks/resilience/traffic/reports/websocket-http.json",
+              "utf8"
+            )
+          );
+
+          for (const field of [
+            "isolated",
+            "baselineHealthy",
+            "serverCrashDetected",
+            "outagePublishingRejected",
+            "serverRestarted",
+            "clientsReconnected",
+            "roomSubscriptionsRestored",
+            "postRecoveryDelivered",
+            "passed"
+          ]) {
+            if (r[field] !== true) {
+              throw new Error(`Failed: ${field}`);
+            }
+          }
+
+          for (const name of [
+            "baseline",
+            "outage",
+            "recovery"
+          ]) {
+            if (r.traffic[name].attempts < 10) {
+              throw new Error(
+                `Insufficient ${name} traffic`
+              );
+            }
+          }
+
+          if (
+            r.traffic.baseline.rejected !== 0 ||
+            r.traffic.outage.acknowledged !== 0 ||
+            r.traffic.recovery.rejected !== 0 ||
+            r.duplicateDeliveries !== 0 ||
+            r.failures.length !== 0
+          ) {
+            throw new Error(
+              "WebSocket traffic resilience validation failed"
+            );
+          }
+
+          console.log(
+            "PASS: WebSocket continuous traffic and recovery"
+          );
+          EOFJS
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: websocket-http-traffic-${{ github.run_id }}
+          path: server/benchmarks/resilience/traffic/reports/websocket-http.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Show Redis logs if failed
+        if: failure()
+        run: |
+          docker logs criczone-websocket-traffic-redis || true
+
+      - name: Remove isolated Redis
+        if: always()
+        run: |
+          docker rm -f criczone-websocket-traffic-redis || true
