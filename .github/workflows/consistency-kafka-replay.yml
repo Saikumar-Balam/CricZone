@@ -1,0 +1,204 @@
+
+name: Kafka Replay and Scoring Consistency
+
+on:
+  workflow_dispatch:
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/consistency-kafka-replay.yml"
+      - "server/benchmarks/resilience/consistency/kafka-replay-consistency.js"
+      - "server/src/messaging/**"
+
+permissions:
+  contents: read
+
+jobs:
+  kafka-consistency:
+    name: Duplicate Events and Replay Consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: server
+
+    env:
+      NODE_ENV: test
+      TEST_DATABASE_URL: postgresql://criczone_test:criczone_test_password@127.0.0.1:55434/criczone_resilience
+      TEST_REDIS_URL: redis://127.0.0.1:56382
+      TEST_KAFKA_BROKER: 127.0.0.1:9092
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start isolated PostgreSQL
+        run: |
+          set -euo pipefail
+
+          docker run -d \
+            --name criczone-consistency-kafka-pg \
+            -p 127.0.0.1:55434:5432 \
+            -e POSTGRES_USER=criczone_test \
+            -e POSTGRES_PASSWORD=criczone_test_password \
+            -e POSTGRES_DB=criczone_resilience \
+            postgres:16-alpine
+
+      - name: Start isolated Valkey
+        run: |
+          set -euo pipefail
+
+          docker run -d \
+            --name criczone-consistency-kafka-valkey \
+            -p 127.0.0.1:56382:6379 \
+            valkey/valkey:8-alpine
+
+      - name: Start isolated Kafka
+        run: |
+          set -euo pipefail
+
+          docker run -d \
+            --name criczone-consistency-kafka \
+            -p 127.0.0.1:9092:9092 \
+            -e KAFKA_NODE_ID=1 \
+            -e KAFKA_PROCESS_ROLES=broker,controller \
+            -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
+            -e KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+            -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://127.0.0.1:9092 \
+            -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT \
+            -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+            -e KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT \
+            -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+            -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+            -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+            -e KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0 \
+            apache/kafka:3.9.1
+
+      - name: Wait for isolated services
+        run: |
+          set -euo pipefail
+
+          ready=false
+
+          for attempt in $(seq 1 60); do
+            if docker exec criczone-consistency-kafka-pg \
+              pg_isready \
+              -U criczone_test \
+              -d criczone_resilience \
+              >/dev/null 2>&1 && \
+              docker exec criczone-consistency-kafka-valkey \
+              valkey-cli ping | grep -q PONG && \
+              docker exec criczone-consistency-kafka \
+              /opt/kafka/bin/kafka-broker-api-versions.sh \
+              --bootstrap-server 127.0.0.1:9092 \
+              >/dev/null 2>&1; then
+
+              ready=true
+              break
+            fi
+
+            sleep 2
+          done
+
+          if [[ "$ready" != "true" ]]; then
+            echo "Isolated infrastructure not ready"
+
+            docker logs criczone-consistency-kafka-pg || true
+            docker logs criczone-consistency-kafka-valkey || true
+            docker logs criczone-consistency-kafka || true
+
+            exit 1
+          fi
+
+          echo "PostgreSQL, Valkey and Kafka ready"
+
+      - name: Run Kafka consistency benchmark
+        run: |
+          set -euo pipefail
+
+          node benchmarks/resilience/consistency/kafka-replay-consistency.js
+
+      - name: Validate Kafka consistency report
+        run: |
+          node --input-type=module <<'EOFJS'
+          import assert from "node:assert/strict";
+          import fs from "node:fs";
+
+          const r = JSON.parse(
+            fs.readFileSync(
+              "benchmarks/resilience/consistency/reports/kafka-replay.json",
+              "utf8"
+            )
+          );
+
+          assert.equal(r.phase, "25.7.6.2");
+          assert.equal(r.isolated, true);
+
+          for (const field of [
+            "originalEventsApplied",
+            "duplicateEventIdsSkipped",
+            "duplicateDeliveryIdsRejected",
+            "consumerRestarted",
+            "replayDidNotDoubleScore",
+            "newEventAfterRestartApplied",
+            "authoritativeScoreVerified",
+            "noUnexpectedDeadLetters",
+            "passed"
+          ]) {
+            assert.equal(
+              r[field],
+              true,
+              `Failed: ${field}`
+            );
+          }
+
+          assert.equal(r.publishedEvents, 9);
+          assert.equal(r.uniqueDeliveries, 3);
+          assert.equal(r.finalRuns, 12);
+          assert.equal(r.finalWickets, 1);
+
+          assert(r.redisDuplicateSkips >= 4);
+          assert(r.postgresDuplicateRejections >= 2);
+
+          assert.deepEqual(r.failures, []);
+
+          console.log(
+            "PASS: Kafka duplicate and replay consistency"
+          );
+          EOFJS
+
+      - name: Upload consistency report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kafka-replay-consistency-${{ github.run_id }}
+          path: server/benchmarks/resilience/consistency/reports/kafka-replay.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Show infrastructure logs on failure
+        if: failure()
+        run: |
+          docker logs criczone-consistency-kafka-pg || true
+          docker logs criczone-consistency-kafka-valkey || true
+          docker logs criczone-consistency-kafka || true
+
+      - name: Remove isolated containers
+        if: always()
+        run: |
+          docker rm -f criczone-consistency-kafka-pg || true
+          docker rm -f criczone-consistency-kafka-valkey || true
+          docker rm -f criczone-consistency-kafka || true
