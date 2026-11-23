@@ -288,29 +288,53 @@ async function applyBall(event) {
   }
 }
 
+
 async function startConsumer(label) {
-  assert.equal(activeConsumer, null);
+  assert.equal(
+    activeConsumer,
+    null,
+    "Previous consumer must stop before restart"
+  );
+
+  // Preserve the SAME consumer group across restarts.
+  // This is important for Kafka offset continuity.
+  const groupId = `criczone-consistency-${suffix}`;
 
   const rawConsumer = kafka.consumer({
-    groupId: `criczone-consistency-${label}-${suffix}`,
+    groupId,
     allowAutoTopicCreation: false,
     sessionTimeout: 10000,
     heartbeatInterval: 1000
   });
 
   let joined = false;
+  let fetchStarted = false;
 
   rawConsumer.on(
     rawConsumer.events.GROUP_JOIN,
     () => {
       joined = true;
+      console.log(
+        `[${label}] Kafka consumer joined group`
+      );
     }
   );
 
-  const store = new RedisEventIdempotencyStore(redis, {
-    keyPrefix: `test:criczone:consistency:${suffix}:`,
-    ttlSeconds: 600
-  });
+  rawConsumer.on(
+    rawConsumer.events.FETCH_START,
+    () => {
+      fetchStarted = true;
+    }
+  );
+
+  const store = new RedisEventIdempotencyStore(
+    redis,
+    {
+      keyPrefix:
+        `test:criczone:consistency:${suffix}:`,
+      ttlSeconds: 600
+    }
+  );
 
   const wrapper = new KafkaEventConsumer(
     rawConsumer,
@@ -326,14 +350,25 @@ async function startConsumer(label) {
   activeConsumer = wrapper;
 
   await wrapper.connect();
-  await wrapper.subscribe(topic, applyBall);
 
+  await wrapper.subscribe(
+    topic,
+    applyBall
+  );
+
+  // A group join alone is not enough.
+  // Wait until KafkaJS begins its fetch cycle.
   await waitFor(
-    () => joined,
-    `${label} Kafka consumer group membership`,
+    () => joined && fetchStarted,
+    `${label} Kafka consumer fetch readiness`,
     30000
   );
+
+  console.log(
+    `[${label}] Consumer ready for event processing`
+  );
 }
+
 
 async function stopConsumer() {
   if (!activeConsumer) return;
@@ -377,15 +412,34 @@ async function verifyScore(
   assert.equal(deliveries.wickets, expectedWickets);
 }
 
+
 async function waitForHandled(expected) {
-  await waitFor(
-    () =>
-      handlerInvocations +
-        report.redisDuplicateSkips >= expected,
-    `${expected} consumed Kafka messages`,
-    30000
-  );
+  try {
+    await waitFor(
+      () =>
+        handlerInvocations +
+          report.redisDuplicateSkips >= expected,
+      `${expected} consumed Kafka messages`,
+      30000
+    );
+  } catch (error) {
+    console.error("Kafka replay diagnostics:", {
+      expectedMessages: expected,
+      publishedEvents: report.publishedEvents,
+      handlerInvocations,
+      redisDuplicateSkips:
+        report.redisDuplicateSkips,
+      postgresDuplicateRejections:
+        duplicateDeliveryRejections,
+      accountedMessages:
+        handlerInvocations +
+        report.redisDuplicateSkips
+    });
+
+    throw error;
+  }
 }
+
 
 async function main() {
   verifyIsolation();
