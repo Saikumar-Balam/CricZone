@@ -1,18 +1,15 @@
 
 /**
- * CricZone Phase 25.7.6.2
- * Kafka duplicate event and replay consistency.
- *
- * Real KafkaJS, PostgreSQL, Valkey and CricZone consumer.
- * Only runs against isolated GitHub Actions services.
+ * CricZone Phase 25.7.6.2: Kafka duplicate-event and replay consistency.
+ * Real KafkaJS, PostgreSQL, Valkey, and CricZone messaging adapters.
+ * Run only in isolated GitHub Actions test infrastructure.
  */
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { setTimeout as sleep } from "node:timers/promises";
 import path from "node:path";
-
+import { setTimeout as sleep } from "node:timers/promises";
 import { Kafka, logLevel } from "kafkajs";
 import pg from "pg";
 import { createClient } from "redis";
@@ -36,10 +33,13 @@ const OUTPUT = path.resolve(
 
 const runId = randomUUID();
 const suffix = runId.replaceAll("-", "");
-const matchId = 960000000 + Math.floor(Math.random() * 10000000);
+
+const matchId =
+  960000000 + Math.floor(Math.random() * 10000000);
 
 const topic = `criczone.consistency.${suffix}`;
 const dlqTopic = `criczone.consistency.dlq.${suffix}`;
+const groupId = `criczone-consistency-${suffix}`;
 
 const report = {
   phase: "25.7.6.2",
@@ -66,13 +66,15 @@ const report = {
   finalWickets: null,
 
   failures: [],
+
   warnings: [
-    "Replay is simulated by republishing event envelopes with their original event IDs.",
-    "This does not test Kafka offset rewind or broker crash recovery.",
+    "Replay means republishing original event envelopes; Kafka offset rewind is not tested.",
+    "This does not test Kafka broker crashes or recovery.",
     "Redis event claims expire and are not atomic with PostgreSQL commits.",
-    "Database uniqueness protects the isolated test ledger, not yet every production scoring path.",
+    "Database uniqueness protects the isolated test ledger, not all production scoring paths.",
     "Exactly-once business processing is not established."
   ],
+
   passed: false
 };
 
@@ -83,15 +85,15 @@ function verifyIsolation() {
   assert.equal(process.env.TEST_REDIS_URL, REDIS_URL);
   assert.equal(process.env.TEST_KAFKA_BROKER, BROKER);
 
-  for (const name of [
+  for (const variable of [
     "DATABASE_URL",
     "REDIS_URL",
     "KAFKA_BROKERS"
   ]) {
     assert.equal(
-      process.env[name],
+      process.env[variable],
       undefined,
-      `${name} must not point to production`
+      `${variable} must not be set`
     );
   }
 
@@ -100,24 +102,44 @@ function verifyIsolation() {
 
 const logger = {
   info() {},
-  warn() {},
+
+  warn(message, details) {
+    console.warn(message, details ?? "");
+  },
+
   error(message, details) {
     console.error(message, details ?? "");
   }
 };
 
+let successfulMessages = 0;
+let deadLetterEvents = 0;
+
 const metrics = {
   incrementCounter(name, amount = 1) {
+    if (name === "kafka_events_consumed_total") {
+      successfulMessages += amount;
+    }
+
     if (name === "kafka_duplicate_events_total") {
       report.redisDuplicateSkips += amount;
     }
 
     if (name === "kafka_dead_letter_events_total") {
+      deadLetterEvents += amount;
+
       report.failures.push(
-        "Unexpected event was sent to the dead-letter topic"
+        "Unexpected Kafka event sent to dead-letter topic"
+      );
+    }
+
+    if (name === "kafka_event_failures_total") {
+      report.failures.push(
+        "Unexpected Kafka consumer event failure"
       );
     }
   },
+
   observeHistogram() {}
 };
 
@@ -131,7 +153,7 @@ const pool = new pg.Pool({
 
 pool.on("error", error => {
   report.failures.push(
-    `PostgreSQL pool error: ${error.message}`
+    `PostgreSQL pool: ${error.message}`
   );
 });
 
@@ -146,7 +168,7 @@ const redis = createClient({
 
 redis.on("error", error => {
   report.failures.push(
-    `Valkey connection error: ${error.message}`
+    `Valkey: ${error.message}`
   );
 });
 
@@ -162,6 +184,7 @@ const kafka = new Kafka({
 });
 
 const admin = kafka.admin();
+
 const rawProducer = kafka.producer({
   allowAutoTopicCreation: false
 });
@@ -179,11 +202,23 @@ let handlerInvocations = 0;
 let appliedDeliveries = 0;
 let duplicateDeliveryRejections = 0;
 
-async function waitFor(check, label, timeout = 20000) {
-  const deadline = Date.now() + timeout;
+async function waitFor(
+  predicate,
+  label,
+  timeoutMs = 30000
+) {
+  const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    if (await check()) return;
+    if (await predicate()) {
+      return;
+    }
+
+    if (report.failures.length) {
+      throw new Error(
+        `Unexpected failure during ${label}: ${report.failures.join("; ")}`
+      );
+    }
 
     await sleep(100);
   }
@@ -206,9 +241,10 @@ async function getScore() {
 
 async function getDeliveries() {
   const result = await pool.query(
-    `SELECT COUNT(*)::integer AS count,
-            COALESCE(SUM(runs), 0)::integer AS runs,
-            COALESCE(SUM(wicket), 0)::integer AS wickets
+    `SELECT
+       COUNT(*)::integer AS count,
+       COALESCE(SUM(runs), 0)::integer AS runs,
+       COALESCE(SUM(wicket), 0)::integer AS wickets
      FROM resilience_kafka_deliveries
      WHERE match_id = $1`,
     [matchId]
@@ -219,7 +255,11 @@ async function getDeliveries() {
 
 async function applyBall(event) {
   assert.equal(event.type, "BALL_RECORDED");
-  assert.equal(String(event.aggregateId), String(matchId));
+
+  assert.equal(
+    String(event.aggregateId),
+    String(matchId)
+  );
 
   const {
     deliveryId,
@@ -235,13 +275,12 @@ async function applyBall(event) {
   handlerInvocations++;
 
   const client = await pool.connect();
+  let inserted = false;
 
   try {
     await client.query("BEGIN");
 
-    // Delivery ID is the business identity of a ball.
-    // It is independent of Kafka's event ID.
-    const inserted = await client.query(
+    const result = await client.query(
       `INSERT INTO resilience_kafka_deliveries
          (match_id, delivery_id, event_id, runs, wicket)
        VALUES ($1, $2, $3, $4, $5)
@@ -256,7 +295,9 @@ async function applyBall(event) {
       ]
     );
 
-    if (inserted.rowCount === 1) {
+    inserted = result.rowCount === 1;
+
+    if (inserted) {
       const updated = await client.query(
         `UPDATE resilience_kafka_matches
          SET runs = runs + $2,
@@ -266,19 +307,22 @@ async function applyBall(event) {
       );
 
       assert.equal(updated.rowCount, 1);
+    }
 
+    await client.query("COMMIT");
+
+    // Count only successfully committed transactions.
+    if (inserted) {
       appliedDeliveries++;
     } else {
       duplicateDeliveryRejections++;
     }
 
-    await client.query("COMMIT");
-
   } catch (error) {
     try {
       await client.query("ROLLBACK");
     } catch {
-      // Preserve original failure.
+      // Preserve original error.
     }
 
     throw error;
@@ -288,17 +332,31 @@ async function applyBall(event) {
   }
 }
 
+function makeBall(
+  deliveryId,
+  runs,
+  wicket = 0
+) {
+  return createEvent({
+    type: "BALL_RECORDED",
+    aggregateId: String(matchId),
+
+    payload: {
+      deliveryId,
+      runs,
+      wicket
+    }
+  });
+}
+
+async function publish(event) {
+  await eventProducer.publish(topic, event);
+
+  report.publishedEvents++;
+}
 
 async function startConsumer(label) {
-  assert.equal(
-    activeConsumer,
-    null,
-    "Previous consumer must stop before restart"
-  );
-
-  // Preserve the SAME consumer group across restarts.
-  // This is important for Kafka offset continuity.
-  const groupId = `criczone-consistency-${suffix}`;
+  assert.equal(activeConsumer, null);
 
   const rawConsumer = kafka.consumer({
     groupId,
@@ -307,23 +365,39 @@ async function startConsumer(label) {
     heartbeatInterval: 1000
   });
 
+  /*
+   * Only for this isolated benchmark:
+   *
+   * The production KafkaEventConsumer adapter uses
+   * fromBeginning: false.
+   *
+   * For the initial test consumer, override that
+   * subscription option so a new consumer group starts
+   * at offset 0, where the baseline events already exist.
+   *
+   * Do not change production consumer behavior.
+   */
+  if (label === "initial") {
+    const subscribe =
+      rawConsumer.subscribe.bind(rawConsumer);
+
+    rawConsumer.subscribe = options =>
+      subscribe({
+        ...options,
+        fromBeginning: true
+      });
+  }
+
   let joined = false;
-  let fetchStarted = false;
 
   rawConsumer.on(
     rawConsumer.events.GROUP_JOIN,
     () => {
       joined = true;
+
       console.log(
         `[${label}] Kafka consumer joined group`
       );
-    }
-  );
-
-  rawConsumer.on(
-    rawConsumer.events.FETCH_START,
-    () => {
-      fetchStarted = true;
     }
   );
 
@@ -349,97 +423,128 @@ async function startConsumer(label) {
 
   activeConsumer = wrapper;
 
-  await wrapper.connect();
+  try {
+    await wrapper.connect();
 
-  await wrapper.subscribe(
-    topic,
-    applyBall
-  );
+    await wrapper.subscribe(
+      topic,
+      applyBall
+    );
 
-  // A group join alone is not enough.
-  // Wait until KafkaJS begins its fetch cycle.
-  await waitFor(
-    () => joined && fetchStarted,
-    `${label} Kafka consumer fetch readiness`,
-    30000
-  );
+    await waitFor(
+      () => joined,
+      `${label} Kafka consumer group join`
+    );
+
+  } catch (error) {
+    try {
+      await wrapper.disconnect();
+    } catch {
+      // Preserve original failure.
+    }
+
+    activeConsumer = null;
+
+    throw error;
+  }
 
   console.log(
-    `[${label}] Consumer ready for event processing`
+    `[${label}] Consumer joined; awaiting completed-message metrics`
   );
 }
 
-
 async function stopConsumer() {
-  if (!activeConsumer) return;
+  if (!activeConsumer) {
+    return;
+  }
 
   const consumer = activeConsumer;
+
   activeConsumer = null;
 
   await consumer.disconnect();
 }
 
-function ball(deliveryId, runs, wicket = 0) {
-  return createEvent({
-    type: "BALL_RECORDED",
-    aggregateId: String(matchId),
-    payload: {
-      deliveryId,
-      runs,
-      wicket
-    }
+function logDiagnostics(expected) {
+  console.error("Kafka replay diagnostics:", {
+    expected,
+    publishedEvents: report.publishedEvents,
+    successfulMessages,
+    redisDuplicateSkips:
+      report.redisDuplicateSkips,
+
+    accountedMessages:
+      successfulMessages +
+      report.redisDuplicateSkips,
+
+    handlerInvocations,
+    appliedDeliveries,
+
+    postgresDuplicateRejections:
+      duplicateDeliveryRejections,
+
+    deadLetterEvents
   });
 }
 
-async function publish(event) {
-  await eventProducer.publish(topic, event);
-  report.publishedEvents++;
-}
-
-async function verifyScore(
-  expectedRuns,
-  expectedWickets,
-  expectedDeliveries
-) {
-  const score = await getScore();
-  const deliveries = await getDeliveries();
-
-  assert.equal(score.runs, expectedRuns);
-  assert.equal(score.wickets, expectedWickets);
-
-  assert.equal(deliveries.count, expectedDeliveries);
-  assert.equal(deliveries.runs, expectedRuns);
-  assert.equal(deliveries.wickets, expectedWickets);
-}
-
-
-async function waitForHandled(expected) {
+async function waitForProcessed(expected) {
   try {
     await waitFor(
       () =>
-        handlerInvocations +
+        successfulMessages +
           report.redisDuplicateSkips >= expected,
-      `${expected} consumed Kafka messages`,
-      30000
+
+      `${expected} processed/skipped Kafka records`
     );
+
   } catch (error) {
-    console.error("Kafka replay diagnostics:", {
-      expectedMessages: expected,
-      publishedEvents: report.publishedEvents,
-      handlerInvocations,
-      redisDuplicateSkips:
-        report.redisDuplicateSkips,
-      postgresDuplicateRejections:
-        duplicateDeliveryRejections,
-      accountedMessages:
-        handlerInvocations +
-        report.redisDuplicateSkips
-    });
+    logDiagnostics(expected);
 
     throw error;
   }
 }
 
+async function waitForGroupOffset(expected) {
+  /*
+   * Verify that the same consumer group committed
+   * the Kafka offsets before restarting.
+   */
+  await waitFor(async () => {
+    const records = await admin.fetchOffsets({
+      groupId,
+      topics: [topic]
+    });
+
+    const partition = records
+      .find(record => record.topic === topic)
+      ?.partitions
+      .find(item => item.partition === 0);
+
+    return partition &&
+      BigInt(partition.offset) >= BigInt(expected);
+
+  }, `committed consumer group offset ${expected}`);
+}
+
+async function verifyScore(
+  runs,
+  wickets,
+  deliveries
+) {
+  const score = await getScore();
+  const ledger = await getDeliveries();
+
+  assert.deepEqual(score, {
+    runs,
+    wickets
+  });
+
+  assert.deepEqual(ledger, {
+    count: deliveries,
+    runs,
+    wickets
+  });
+}
 
 async function main() {
   verifyIsolation();
@@ -447,9 +552,15 @@ async function main() {
   await pool.query("SELECT 1");
 
   await redis.connect();
-  assert.equal(await redis.ping(), "PONG");
 
-  // These tables exist only inside the isolated CI database.
+  assert.equal(
+    await redis.ping(),
+    "PONG"
+  );
+
+  /*
+   * Test-only PostgreSQL tables.
+   */
   await pool.query(`
     CREATE TABLE resilience_kafka_matches (
       id BIGINT PRIMARY KEY,
@@ -476,133 +587,196 @@ async function main() {
     [matchId]
   );
 
+  /*
+   * Create isolated Kafka topics.
+   */
   await admin.connect();
 
   await admin.createTopics({
     waitForLeaders: true,
+
     topics: [
-      {
-        topic,
-        numPartitions: 1,
-        replicationFactor: 1
-      },
-      {
-        topic: dlqTopic,
-        numPartitions: 1,
-        replicationFactor: 1
-      }
-    ]
+      topic,
+      dlqTopic
+    ].map(name => ({
+      topic: name,
+      numPartitions: 1,
+      replicationFactor: 1
+    }))
   });
 
   await rawProducer.connect();
 
-  const ballA = ball("delivery-A", 4);
-  const ballB = ball("delivery-B", 6, 1);
+  /*
+   * Baseline:
+   *
+   * Ball A: 4 runs
+   * Ball B: 6 runs, 1 wicket
+   *
+   * Expected: 10 runs, 1 wicket
+   */
+  const ballA = makeBall(
+    "delivery-A",
+    4
+  );
 
-  // First consumer processes the baseline events.
+  const ballB = makeBall(
+    "delivery-B",
+    6,
+    1
+  );
+
+  const alternateA = makeBall(
+    "delivery-A",
+    4
+  );
+
+  /*
+   * Publish baseline records BEFORE creating the
+   * initial consumer.
+   *
+   * This eliminates the initial offset race.
+   */
+  for (const event of [
+    ballA,
+    ballA,
+    alternateA,
+    ballB
+  ]) {
+    await publish(event);
+  }
+
+  /*
+   * Confirm Kafka contains exactly four records.
+   */
+  const initialOffsets =
+    await admin.fetchTopicOffsets(topic);
+
+  assert.equal(initialOffsets.length, 1);
+
+  assert.equal(
+    initialOffsets[0].offset,
+    "4"
+  );
+
+  /*
+   * Start consumer from the beginning of the
+   * isolated topic.
+   */
   await startConsumer("initial");
 
-  await publish(ballA);
-  await publish(ballA);
+  await waitForProcessed(4);
 
-  // Different event ID, same ball identity.
-  const ballAAlternate = ball("delivery-A", 4);
-  await publish(ballAAlternate);
-
-  await publish(ballB);
-
- await waitForHandled(4);
-
-await waitFor(async () => {
-  const score = await getScore();
-  const deliveries = await getDeliveries();
-
-  return (
-    score.runs === 10 &&
-    score.wickets === 1 &&
-    deliveries.count === 2
+  await verifyScore(
+    10,
+    1,
+    2
   );
-}, "baseline database reconciliation");
 
-await verifyScore(10, 1, 2);
+  assert.equal(successfulMessages, 3);
+  assert.equal(report.redisDuplicateSkips, 1);
+  assert.equal(duplicateDeliveryRejections, 1);
 
   report.originalEventsApplied = true;
-
-  assert(report.redisDuplicateSkips >= 1);
-
   report.duplicateEventIdsSkipped = true;
-
-  assert(duplicateDeliveryRejections >= 1);
-
   report.duplicateDeliveryIdsRejected = true;
 
-  // Stop the original Kafka consumer.
+  /*
+   * Confirm offset 4 is committed before stopping
+   * the consumer.
+   */
+  await waitForGroupOffset(4);
+
   await stopConsumer();
 
-  // Start a new consumer instance with the same
-  // Redis idempotency namespace.
+  /*
+   * Restart using the same Kafka consumer group and
+   * Redis idempotency namespace.
+   */
   await startConsumer("restarted");
 
   report.consumerRestarted = true;
 
-  // Replay original event envelopes.
-  await publish(ballA);
-  await publish(ballB);
-
-  // Different event ID but already scored delivery.
-  const ballBAlternate = ball("delivery-B", 6, 1);
-  await publish(ballBAlternate);
-
-  // Legitimate new ball after restart.
-  const ballC = ball("delivery-C", 2);
-  await publish(ballC);
-  await publish(ballC);
-
-  await waitForHandled(9);
-
-await waitFor(async () => {
-  const score = await getScore();
-  const deliveries = await getDeliveries();
-
-  return (
-    score.runs === 12 &&
-    score.wickets === 1 &&
-    deliveries.count === 3
+  /*
+   * Replay previous event envelopes.
+   */
+  const alternateB = makeBall(
+    "delivery-B",
+    6,
+    1
   );
-}, "replayed database reconciliation");
 
-await verifyScore(12, 1, 3);
+  const ballC = makeBall(
+    "delivery-C",
+    2
+  );
+
+  /*
+   * Replay:
+   *
+   * A original event ID: Redis skip
+   * B original event ID: Redis skip
+   * B alternate ID: PostgreSQL duplicate
+   * C original: 2 runs
+   * C duplicate: Redis skip
+   */
+  for (const event of [
+    ballA,
+    ballB,
+    alternateB,
+    ballC,
+    ballC
+  ]) {
+    await publish(event);
+  }
+
+  await waitForProcessed(9);
+
+  /*
+   * Expected final score:
+   *
+   * 4 + 6 + 2 = 12 runs
+   * 1 wicket
+   * 3 unique deliveries
+   */
+  await verifyScore(
+    12,
+    1,
+    3
+  );
+
+  await waitForGroupOffset(9);
+
+  /*
+   * Verify exact event accounting.
+   */
+  assert.equal(successfulMessages, 5);
+
+  assert.equal(report.redisDuplicateSkips, 4);
+
+  assert.equal(duplicateDeliveryRejections, 2);
+
+  assert.equal(appliedDeliveries, 3);
+
+  assert.equal(handlerInvocations, 5);
+
+  assert.equal(report.publishedEvents, 9);
 
   report.replayDidNotDoubleScore = true;
   report.newEventAfterRestartApplied = true;
-
-  assert(report.redisDuplicateSkips >= 4);
-  assert(duplicateDeliveryRejections >= 2);
-
-  // Reconcile authoritative match score against
-  // the unique committed delivery ledger.
-  const score = await getScore();
-  const deliveries = await getDeliveries();
-
-  assert.equal(score.runs, deliveries.runs);
-  assert.equal(score.wickets, deliveries.wickets);
-
   report.authoritativeScoreVerified = true;
 
-  report.handlerInvocations = handlerInvocations;
-  report.postgresDuplicateRejections =
-    duplicateDeliveryRejections;
-  report.uniqueDeliveries = deliveries.count;
-
-  report.finalRuns = score.runs;
-  report.finalWickets = score.wickets;
-
   report.noUnexpectedDeadLetters =
+    deadLetterEvents === 0 &&
     report.failures.length === 0;
 
-  assert.equal(appliedDeliveries, 3);
-  assert.equal(report.publishedEvents, 9);
-  assert.equal(report.handlerInvocations, 5);
+  report.uniqueDeliveries =
+    (await getDeliveries()).count;
+
+  const finalScore = await getScore();
+
+  report.finalRuns = finalScore.runs;
+  report.finalWickets = finalScore.wickets;
 
   report.passed = [
     report.isolated,
@@ -628,30 +802,38 @@ try {
 } finally {
   try {
     await stopConsumer();
+
   } catch (error) {
     report.failures.push(
       `Consumer cleanup: ${error.message}`
     );
   }
 
-  await Promise.allSettled([
+  /*
+   * Release all isolated infrastructure connections.
+   */
+  const cleanup = await Promise.allSettled([
     rawProducer.disconnect(),
-    admin.disconnect()
+    admin.disconnect(),
+
+    redis.isOpen
+      ? redis.quit()
+      : Promise.resolve(),
+
+    pool.end()
   ]);
 
-  if (redis.isOpen) {
-    redis.destroy();
+  for (const outcome of cleanup) {
+    if (outcome.status === "rejected") {
+      report.failures.push(
+        `Cleanup: ${outcome.reason?.message ?? outcome.reason}`
+      );
+    }
   }
 
-  try {
-    await pool.end();
-  } catch (error) {
-    report.failures.push(
-      `PostgreSQL cleanup: ${error.message}`
-    );
-  }
+  report.handlerInvocations =
+    handlerInvocations;
 
-  report.handlerInvocations = handlerInvocations;
   report.postgresDuplicateRejections =
     duplicateDeliveryRejections;
 
@@ -661,7 +843,9 @@ try {
 
   await mkdir(
     path.dirname(OUTPUT),
-    { recursive: true }
+    {
+      recursive: true
+    }
   );
 
   await writeFile(
