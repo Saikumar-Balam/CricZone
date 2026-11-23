@@ -1,0 +1,232 @@
+
+name: CricZone REST Baseline 25.8.1
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Baseline (rate-limit friendly) or stress (may trigger 429)'
+        type: choice
+        options:
+          - baseline
+          - stress
+        required: true
+        default: baseline
+
+permissions:
+  contents: read
+
+concurrency:
+  group: criczone-rest-baseline-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: criczone
+          POSTGRES_PASSWORD: criczone_ci_password
+          POSTGRES_DB: criczone_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U criczone -d criczone_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      kafka:
+        image: apache/kafka:3.9.1
+        ports:
+          - 9092:9092
+        env:
+          KAFKA_NODE_ID: '1'
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: '1'
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: '1'
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: '1'
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: '0'
+
+    env:
+      NODE_ENV: test
+      PORT: '3000'
+
+      DATABASE_URL: postgresql://criczone:criczone_ci_password@localhost:5432/criczone_test
+      TEST_DATABASE_URL: postgresql://criczone:criczone_ci_password@localhost:5432/criczone_test
+
+      REDIS_URL: redis://localhost:6379
+      TEST_REDIS_URL: redis://localhost:6379
+
+      KAFKA_CLIENT_ID: criczone-rest-baseline
+      KAFKA_BROKERS: localhost:9092
+      TEST_KAFKA_BROKERS: localhost:9092
+      KAFKA_LIVE_CONSUMER_GROUP: criczone-rest-baseline-group
+      TEST_KAFKA_TOPIC: criczone.test.live-events
+
+      CORS_ALLOWED_ORIGINS: http://localhost:5173
+      TEST_CORS_ALLOWED_ORIGINS: http://localhost:5173
+
+      BASE_URL: http://127.0.0.1:3000
+      MATCH_ID: '1'
+      ISOLATED_TEST_ENV: 'true'
+      PROFILE: ${{ inputs.profile }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Install k6
+        run: |
+          curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
+
+          echo 'deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main' | sudo tee /etc/apt/sources.list.d/k6.list
+
+          sudo apt-get update
+          sudo apt-get install -y k6
+          k6 version
+
+      - name: Initialize PostgreSQL schema and seed data
+        working-directory: server
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGUSER: criczone
+          PGPASSWORD: criczone_ci_password
+          PGDATABASE: criczone_test
+        run: |
+          psql -v ON_ERROR_STOP=1 -c 'DROP SCHEMA IF EXISTS public CASCADE;'
+          psql -v ON_ERROR_STOP=1 -f database/schema/schema.sql
+          psql -v ON_ERROR_STOP=1 -f database/seeds/seed.sql
+
+          psql -Atqc 'SELECT match_id FROM scorecards WHERE match_id = 1' | grep -qx '1'
+
+      - name: Initialize Kafka topics
+        working-directory: server
+        run: |
+          node --input-type=module <<'EOFJS'
+          import { Kafka } from 'kafkajs';
+
+          const kafka = new Kafka({
+            clientId: 'criczone-rest-benchmark-admin',
+            brokers: ['localhost:9092'],
+            retry: {
+              retries: 10,
+              initialRetryTime: 1000
+            }
+          });
+
+          const admin = kafka.admin();
+
+          try {
+            await admin.connect();
+
+            await admin.createTopics({
+              waitForLeaders: true,
+              topics: [
+                {
+                  topic: 'criczone.live.ball-events',
+                  numPartitions: 1,
+                  replicationFactor: 1
+                },
+                {
+                  topic: 'criczone.test.live-events',
+                  numPartitions: 1,
+                  replicationFactor: 1
+                }
+              ]
+            });
+          } finally {
+            await admin.disconnect();
+          }
+          EOFJS
+
+      - name: Start isolated Express server
+        working-directory: server
+        run: |
+          nohup npm start > /tmp/criczone-rest-baseline-server.log 2>&1 &
+          echo $! > /tmp/criczone-rest-baseline-server.pid
+
+      - name: Verify backend readiness
+        run: |
+          for i in $(seq 1 60); do
+            if curl --fail --silent --output /dev/null http://127.0.0.1:3000/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo 'Express server did not become ready'
+          exit 1
+
+      - name: Validate REST endpoints before load
+        run: |
+          set -euo pipefail
+
+          for path in /api/v1/matches /api/v1/matches/1 /api/v1/matches/1/scorecard; do
+            echo "Checking ${path}"
+
+            curl --fail --show-error --silent "${BASE_URL}${path}" \
+              | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{const j=JSON.parse(s);if(j.success!==true||j.data==null) process.exit(1);console.log("valid API payload")})'
+          done
+
+      - name: Run existing health smoke benchmark
+        run: k6 run server/load-tests/rest-api.js
+
+      - name: Run cricket REST baseline
+        run: k6 run server/load-tests/rest-api-baseline.js
+
+      - name: Preserve backend log
+        if: always()
+        run: |
+          mkdir -p benchmark-evidence
+
+          if [ -f /tmp/criczone-rest-baseline-server.log ]; then
+            cp /tmp/criczone-rest-baseline-server.log benchmark-evidence/server.log
+          fi
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: criczone-rest-baseline-${{ github.run_id }}
+          path: |
+            rest-api-baseline-results.json
+            benchmark-evidence/server.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Show backend logs on failure
+        if: failure()
+        run: tail -n 150 /tmp/criczone-rest-baseline-server.log || true
