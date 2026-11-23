@@ -1,0 +1,210 @@
+
+name: Cross-Component Recovery Consistency
+
+on:
+  workflow_dispatch:
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/consistency-cross-component.yml"
+      - "server/benchmarks/resilience/consistency/cross-component-consistency.js"
+      - "server/benchmarks/resilience/websocket/websocket-server.js"
+      - "server/src/messaging/**"
+      - "server/src/websocket/**"
+      - "server/src/services/MatchService.js"
+      - "server/src/controllers/MatchController.js"
+      - "server/src/routes/match.routes.js"
+      - "server/src/cache/**"
+
+permissions:
+  contents: read
+
+jobs:
+  cross-component-consistency:
+    name: Kafka PostgreSQL Valkey SocketIO REST Consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: server
+
+    env:
+      NODE_ENV: test
+      TEST_DATABASE_URL: postgresql://criczone_test:criczone_test_password@127.0.0.1:55436/criczone_resilience
+      TEST_REDIS_URL: redis://127.0.0.1:56384
+      TEST_KAFKA_BROKER: 127.0.0.1:9092
+      WS_BENCH_PORT: "4009"
+      WS_BENCH_REDIS_URL: redis://127.0.0.1:56384
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start PostgreSQL
+        run: |
+          docker run -d \
+            --name criczone-cross-pg \
+            -p 127.0.0.1:55436:5432 \
+            -e POSTGRES_USER=criczone_test \
+            -e POSTGRES_PASSWORD=criczone_test_password \
+            -e POSTGRES_DB=criczone_resilience \
+            postgres:16-alpine
+
+      - name: Start Valkey
+        run: |
+          docker run -d \
+            --name criczone-cross-valkey \
+            -p 127.0.0.1:56384:6379 \
+            valkey/valkey:8-alpine
+
+      - name: Start Kafka
+        run: |
+          docker run -d \
+            --name criczone-cross-kafka \
+            -p 127.0.0.1:9092:9092 \
+            -e KAFKA_NODE_ID=1 \
+            -e KAFKA_PROCESS_ROLES=broker,controller \
+            -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
+            -e KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+            -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://127.0.0.1:9092 \
+            -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT \
+            -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+            -e KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT \
+            -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+            -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+            -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+            -e KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0 \
+            apache/kafka:3.9.1
+
+      - name: Wait for infrastructure
+        run: |
+          set -euo pipefail
+
+          ready=false
+
+          for attempt in $(seq 1 60); do
+            if docker exec criczone-cross-pg \
+              pg_isready -U criczone_test \
+              -d criczone_resilience >/dev/null 2>&1 && \
+              docker exec criczone-cross-valkey \
+              valkey-cli ping | grep -q PONG && \
+              docker exec criczone-cross-kafka \
+              /opt/kafka/bin/kafka-broker-api-versions.sh \
+              --bootstrap-server 127.0.0.1:9092 \
+              >/dev/null 2>&1; then
+
+              ready=true
+              break
+            fi
+
+            sleep 2
+          done
+
+          if [[ "$ready" != "true" ]]; then
+            echo "Infrastructure failed readiness"
+            exit 1
+          fi
+
+          echo "All isolated services ready"
+
+      - name: Validate syntax
+        run: |
+          node --check \
+            benchmarks/resilience/consistency/cross-component-consistency.js
+
+      - name: Execute integration benchmark
+        run: |
+          set -euo pipefail
+          node \
+            benchmarks/resilience/consistency/cross-component-consistency.js
+
+      - name: Validate report
+        run: |
+          node --input-type=module <<'EOFJS'
+          import assert from "node:assert/strict";
+          import fs from "node:fs";
+
+          const r = JSON.parse(
+            fs.readFileSync(
+              "benchmarks/resilience/consistency/reports/cross-component.json",
+              "utf8"
+            )
+          );
+
+          assert.equal(r.phase, "25.7.6.4");
+
+          for (const field of [
+            "isolated",
+            "kafkaProcessed",
+            "duplicateEventIdSkipped",
+            "duplicateDeliveryRejected",
+            "postgresAuthoritative",
+            "staleRedisBypassed",
+            "pendingInvalidationRetained",
+            "cacheRepaired",
+            "websocketMissedDuringDisconnect",
+            "restResynchronizationSucceeded",
+            "newLiveEventDelivered",
+            "staleWebsocketEventRejected",
+            "finalComponentsConsistent",
+            "passed"
+          ]) {
+            assert.equal(
+              r[field],
+              true,
+              `Failed: ${field}`
+            );
+          }
+
+          assert.equal(r.publishedEvents, 5);
+          assert.equal(r.successfulMessages, 4);
+          assert.equal(r.duplicateEventSkips, 1);
+          assert.equal(r.duplicateDeliveryRejections, 1);
+          assert.equal(r.uniqueDeliveries, 3);
+          assert.equal(r.missedEvents, 1);
+
+          assert(r.staleEventsIgnored >= 1);
+
+          assert.equal(r.finalScore.version, 4);
+          assert.equal(r.finalScore.runs, 22);
+          assert.equal(r.finalScore.wickets, 1);
+          assert.deepEqual(r.failures, []);
+
+          console.log("PASS: Cross-component consistency");
+          EOFJS
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-component-consistency-${{ github.run_id }}
+          path: server/benchmarks/resilience/consistency/reports/cross-component.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          docker logs criczone-cross-pg || true
+          docker logs criczone-cross-valkey || true
+          docker logs criczone-cross-kafka || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f criczone-cross-pg || true
+          docker rm -f criczone-cross-valkey || true
+          docker rm -f criczone-cross-kafka || true
