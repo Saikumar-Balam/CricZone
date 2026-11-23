@@ -1,3 +1,4 @@
+
 import { logger } from "./logger.container.js";
 import RateLimiterMiddleware from "../middleware/RateLimiterMiddleware.js";
 
@@ -13,57 +14,77 @@ import { redisClient } from "./redis.container.js";
 import {
   createErrorHandler
 } from "../middleware/error.middleware.js";
+
 import InMemoryRateLimiter from "../rate-limiting/InMemoryRateLimiter.js";
 import SecurityHeadersMiddleware from "../middleware/SecurityHeadersMiddleware.js";
 import CorsMiddleware from "../middleware/CorsMiddleware.js";
 import JsonErrorMiddleware from "../middleware/JsonErrorMiddleware.js";
 
-
-
-const requestIdMiddleware =
-  new RequestIdMiddleware();
+const requestIdMiddleware = new RequestIdMiddleware();
 
 const requestLoggingMiddleware =
   new RequestLoggingMiddleware(logger);
 
-const errorHandler =
-  createErrorHandler(logger);
+const errorHandler = createErrorHandler(logger);
 
-const isProduction = process.env.NODE_ENV === "production"
+const isProduction = process.env.NODE_ENV === "production";
+
+// Only a deliberately enabled, isolated GitHub Actions test
+// may increase the rate limit for capacity benchmarking.
+const isCiCapacityTest =
+  process.env.NODE_ENV === "test" &&
+  process.env.GITHUB_ACTIONS === "true" &&
+  process.env.CRICZONE_CI_CAPACITY_TEST === "true" &&
+  process.env.PROFILE === "capacity";
 
 const rateLimiterOptions = {
-  limit: 100,
+  limit: isCiCapacityTest ? 10000 : 100,
   windowMs: 60 * 1000
-}
+};
 
-const rateLimiter = isProduction ? new RedisRateLimiter(redisClient, rateLimiterOptions) : new InMemoryRateLimiter(rateLimiterOptions)
+const rateLimiter = isProduction
+  ? new RedisRateLimiter(redisClient, rateLimiterOptions)
+  : new InMemoryRateLimiter(rateLimiterOptions);
 
+const rateLimitMiddleware =
+  new RateLimiterMiddleware(rateLimiter);
 
-const rateLimitMiddleware = new RateLimiterMiddleware(rateLimiter)
-const securityHeadersMiddleware = new SecurityHeadersMiddleware({
-  contentSecurityPolicy: true,
-  strictTransportSecurity: isProduction ? {
-    maxAge: 31536000,
-    includeSubDomains: true
-  }: false
-})
-// CORS
-const corsEnvironmentVariable = process.env.NODE_ENV === "test" ? process.env.TEST_CORS_ALLOWED_ORIGINS : process.env.CORS_ALLOWED_ORIGINS
-const allowedOrigins = (corsEnvironmentVariable || "").split(",").map((origin) => origin.trim()).filter(Boolean)
-const corsMiddleware = new CorsMiddleware(allowedOrigins)
-const jsonErrorMiddleware = new JsonErrorMiddleware()
+const securityHeadersMiddleware =
+  new SecurityHeadersMiddleware({
+    contentSecurityPolicy: true,
+    strictTransportSecurity: isProduction
+      ? {
+          maxAge: 31536000,
+          includeSubDomains: true
+        }
+      : false
+  });
+
+const corsEnvironmentVariable =
+  process.env.NODE_ENV === "test"
+    ? process.env.TEST_CORS_ALLOWED_ORIGINS
+    : process.env.CORS_ALLOWED_ORIGINS;
+
+const allowedOrigins = (corsEnvironmentVariable || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const corsMiddleware = new CorsMiddleware(allowedOrigins);
+const jsonErrorMiddleware = new JsonErrorMiddleware();
 
 export {
   logger,
   requestIdMiddleware,
   requestLoggingMiddleware,
+  errorHandler,
   rateLimiter,
   rateLimitMiddleware,
   securityHeadersMiddleware,
   corsMiddleware,
-  jsonErrorMiddleware,
-  errorHandler
+  jsonErrorMiddleware
 };
+
 
 // Dependency Injection — CorsMiddleware receives the resolved origin list.
 // Environment Isolation — test CORS configuration is separate from development/production.

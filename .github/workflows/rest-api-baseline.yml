@@ -10,6 +10,7 @@ on:
         options:
           - baseline
           - stress
+          - capacity
         required: true
         default: baseline
 
@@ -96,6 +97,7 @@ jobs:
       MATCH_ID: '1'
       ISOLATED_TEST_ENV: 'true'
       PROFILE: ${{ inputs.profile }}
+      CRICZONE_CI_CAPACITY_TEST: ${{ inputs.profile == 'capacity' && 'true' || 'false' }}
 
     steps:
       # ------------------------------------------------------------
