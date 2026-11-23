@@ -1,4 +1,4 @@
-# 🏏 CricZone
+# CricZone
 
 **CricZone** is a scalable, real-time cricket analytics platform designed to deliver live match scores, ball-by-ball updates, scorecards, commentary, player and team statistics, rankings, series information, and cricket news.
 
@@ -6,29 +6,29 @@ The project uses a system-design-oriented architecture with **React, Node.js, Ex
 
 ---
 
-## ✨ Features
+##  Features
 
-* 🏏 Live cricket scores
-* ⚡ Real-time ball-by-ball match updates
-* 💬 Ball-by-ball commentary
-* 📊 Detailed scorecards
-* 🏏 Batting and bowling statistics
-* 👤 Player profiles and statistics
-* 🛡️ Team information
-* 🏆 Series and tournament information
-* 📈 Cricket rankings
-* 📊 Stats Corner
-* 📰 Cricket news
-* 🔎 Search
-* 🌙 Dark / Light theme
-* 🚀 Socket.IO-powered live updates
-* ⚙️ Event-driven live event processing
-* 🧩 Match-specific real-time subscriptions
-* 📉 Runtime, HTTP, Kafka, and WebSocket observability
+*  Live cricket scores
+*  Real-time ball-by-ball match updates
+*  Ball-by-ball commentary
+*  Detailed scorecards
+*  Batting and bowling statistics
+*  Player profiles and statistics
+*  Team information
+*  Series and tournament information
+*  Cricket rankings
+*  Stats Corner
+*  Cricket news
+*  Search
+*  Dark / Light theme
+*  Socket.IO-powered live updates
+*  Event-driven live event processing
+*  Match-specific real-time subscriptions
+*  Runtime, HTTP, Kafka, and WebSocket observability
 
 ---
 
-## 🏗️ Architecture
+##  Architecture
 
 CricZone uses a layered, event-driven architecture.
 
@@ -74,7 +74,7 @@ CricZone uses a layered, event-driven architecture.
 
 ---
 
-## 🔴 Live Update Pipeline
+##  Live Update Pipeline
 
 Live match updates are processed through an asynchronous event-driven pipeline.
 
@@ -146,7 +146,7 @@ An update for match `2` is therefore delivered only to clients subscribed to `ma
 
 ---
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 ### Frontend
 
@@ -208,7 +208,7 @@ An update for match `2` is therefore delivered only to clients subscribed to `ma
 
 ---
 
-## 📁 Project Structure
+##  Project Structure
 
 ```text
 CricZone/
@@ -266,7 +266,7 @@ Infrastructure dependencies are assembled through dependency injection rather th
 
 ---
 
-## 🗄️ Core Data Model
+##  Core Data Model
 
 CricZone contains cricket entities including:
 
@@ -303,7 +303,7 @@ Innings
 
 ---
 
-## ⚾ Ball-by-Ball Processing
+##  Ball-by-Ball Processing
 
 A `BALL_RECORDED` Kafka event contains the information required to process a cricket delivery.
 
@@ -371,7 +371,7 @@ These related database changes are performed within a PostgreSQL transaction to 
 
 ---
 
-## 🏏 Match Format Rules
+##  Match Format Rules
 
 CricZone supports format-specific cricket rules:
 
@@ -423,7 +423,7 @@ Legal balls are stored as canonical counters, while overs and related display va
 
 ---
 
-## 🔌 WebSocket Architecture
+##  WebSocket Architecture
 
 CricZone uses Socket.IO for real-time frontend delivery.
 
@@ -488,7 +488,7 @@ Socket.IO does not provide historical event replay.
 
 ---
 
-## 📨 Kafka
+##  Kafka
 
 Apache Kafka provides the asynchronous live-event pipeline.
 
@@ -534,7 +534,7 @@ criczone.live-events.dlq
 
 ---
 
-## ⚡ Redis / Valkey
+##  Redis / Valkey
 
 Redis-compatible infrastructure is used for:
 
@@ -569,7 +569,7 @@ Kafka event idempotency uses event IDs to suppress duplicate processing within t
 
 ---
 
-## 🌐 Multi-Instance WebSocket Architecture
+##  Multi-Instance WebSocket Architecture
 
 Socket.IO uses a Redis/Valkey adapter to support multiple CricZone backend instances.
 
@@ -589,7 +589,7 @@ A room event emitted by one application instance can therefore reach clients con
 
 ---
 
-## 🔒 Transactional Score Updates
+##  Transactional Score Updates
 
 A cricket delivery can modify several related pieces of persistent state.
 
@@ -625,7 +625,7 @@ This prevents a delivery from leaving only part of the scorecard updated.
 
 ---
 
-## ♻️ Kafka Reliability
+##  Kafka Reliability
 
 Kafka event processing includes:
 
@@ -661,7 +661,7 @@ This produces a maximum of four handler attempts.
 
 ---
 
-## ❤️ Health & Readiness
+##  Health & Readiness
 
 CricZone exposes operational endpoints separately from `/api/v1`.
 
@@ -703,7 +703,7 @@ An unavailable required dependency causes the application to report `NOT_READY` 
 
 ---
 
-## 📊 Observability
+##  Observability
 
 Prometheus-compatible metrics are exposed at:
 
@@ -742,7 +742,7 @@ High-cardinality identifiers such as `matchId` and `socketId` are not used as Pr
 
 ---
 
-## 🧠 Backend Design Principles
+##  Backend Design Principles
 
 ### Single Responsibility Principle
 
@@ -793,7 +793,7 @@ Prometheus
 
 ---
 
-## 🔐 Security
+##  Security
 
 CricZone currently provides public cricket browsing and does not require user authentication.
 
@@ -813,7 +813,7 @@ Authentication and authorization can be introduced later if CricZone adds user-s
 
 ---
 
-## 💻 Local Development
+##  Local Development
 
 Clone the repository:
 
@@ -842,7 +842,7 @@ The frontend and backend can run independently during development.
 
 ---
 
-## 🌐 API
+##  API
 
 Public REST endpoints are versioned under:
 
@@ -875,7 +875,7 @@ Development-only routes must not be exposed in production.
 
 ---
 
-## 📚 Technical Documentation
+##  Technical Documentation
 
 Detailed backend contracts are maintained under:
 
@@ -927,7 +927,7 @@ Contains PostgreSQL, Redis/Valkey, Kafka, Socket.IO, health/readiness, metrics, 
 
 ---
 
-## 🧪 Testing
+##  Testing
 
 The backend uses Vitest and Supertest with unit and integration tests covering application and infrastructure behavior.
 
@@ -945,7 +945,7 @@ npx vitest run tests/integration/kafka --maxWorkers=1
 
 ---
 
-## 🚧 Project Status
+##  Project Status
 
 Completed backend engineering stages include:
 
@@ -993,7 +993,7 @@ Frontend Polish
 
 ---
 
-## ⚠️ Known Pre-Deployment Item
+##  Known Pre-Deployment Item
 
 Socket.IO currently contains the development frontend origin:
 
@@ -1005,7 +1005,7 @@ This must be replaced with environment-driven Socket.IO CORS configuration befor
 
 ---
 
-## 🎯 Engineering Goal
+##  Engineering Goal
 
 CricZone is intended to demonstrate production-oriented software engineering rather than only a static cricket UI.
 
@@ -1030,7 +1030,7 @@ The project focuses on:
 
 ---
 
-## 👨‍💻 Author
+##  Author
 
 **Balam Durga Sai Kumar**
 
@@ -1038,6 +1038,6 @@ Software Developer
 
 ---
 
-## 📄 License
+##  License
 
 This project is intended for educational, portfolio, and development purposes.
