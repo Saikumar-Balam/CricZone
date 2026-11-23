@@ -1,0 +1,183 @@
+
+name: WebSocket Authoritative State Resynchronization
+
+on:
+  workflow_dispatch:
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/consistency-websocket-resync.yml"
+      - "server/benchmarks/resilience/consistency/websocket-resync-consistency.js"
+      - "server/benchmarks/resilience/websocket/websocket-server.js"
+      - "server/src/websocket/**"
+      - "server/src/services/MatchService.js"
+      - "server/src/controllers/MatchController.js"
+      - "server/src/routes/match.routes.js"
+
+permissions:
+  contents: read
+
+jobs:
+  websocket-resync:
+    name: WebSocket REST Recovery Consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    defaults:
+      run:
+        working-directory: server
+
+    env:
+      NODE_ENV: test
+      TEST_DATABASE_URL: postgresql://criczone_test:criczone_test_password@127.0.0.1:55435/criczone_resilience
+      WS_BENCH_PORT: "4007"
+      WS_BENCH_REDIS_URL: redis://127.0.0.1:56383
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install server dependencies
+        run: npm ci
+
+      - name: Start isolated PostgreSQL
+        run: |
+          set -euo pipefail
+
+          docker run -d \
+            --name criczone-resync-postgres \
+            -p 127.0.0.1:55435:5432 \
+            -e POSTGRES_USER=criczone_test \
+            -e POSTGRES_PASSWORD=criczone_test_password \
+            -e POSTGRES_DB=criczone_resilience \
+            postgres:16-alpine
+
+      - name: Start isolated Valkey
+        run: |
+          set -euo pipefail
+
+          docker run -d \
+            --name criczone-resync-valkey \
+            -p 127.0.0.1:56383:6379 \
+            valkey/valkey:8-alpine
+
+      - name: Wait for services
+        run: |
+          set -euo pipefail
+
+          ready=false
+
+          for attempt in $(seq 1 40); do
+            if docker exec criczone-resync-postgres \
+              pg_isready \
+              -U criczone_test \
+              -d criczone_resilience \
+              >/dev/null 2>&1 && \
+              docker exec criczone-resync-valkey \
+              valkey-cli ping | grep -q PONG; then
+
+              ready=true
+              break
+            fi
+
+            sleep 2
+          done
+
+          if [[ "$ready" != "true" ]]; then
+            echo "Test infrastructure not ready"
+            exit 1
+          fi
+
+          echo "PostgreSQL and Valkey ready"
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check \
+            benchmarks/resilience/consistency/websocket-resync-consistency.js
+
+      - name: Run WebSocket resynchronization benchmark
+        run: |
+          set -euo pipefail
+
+          node \
+            benchmarks/resilience/consistency/websocket-resync-consistency.js
+
+      - name: Validate report
+        run: |
+          node --input-type=module <<'EOFJS'
+          import assert from "node:assert/strict";
+          import fs from "node:fs";
+
+          const report = JSON.parse(
+            fs.readFileSync(
+              "benchmarks/resilience/consistency/reports/websocket-resync.json",
+              "utf8"
+            )
+          );
+
+          assert.equal(report.phase, "25.7.6.3");
+          assert.equal(report.isolated, true);
+
+          for (const field of [
+            "baselineDelivered",
+            "disconnectConfirmed",
+            "missedEventsConfirmed",
+            "authoritativeDatabasePreserved",
+            "clientReconnected",
+            "roomSubscriptionRestored",
+            "restSnapshotRecovered",
+            "newLiveEventDelivered",
+            "staleEventRejected",
+            "finalStateConsistent",
+            "passed"
+          ]) {
+            assert.equal(
+              report[field],
+              true,
+              `Failed verification: ${field}`
+            );
+          }
+
+          assert.equal(report.missedEventCount, 2);
+          assert(report.staleEventsIgnored >= 1);
+
+          assert.equal(report.finalScore.version, 5);
+          assert.equal(report.finalScore.runs, 22);
+          assert.equal(report.finalScore.wickets, 1);
+
+          assert.deepEqual(report.failures, []);
+
+          console.log(
+            "PASS: WebSocket authoritative REST resynchronization"
+          );
+          EOFJS
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: websocket-resync-${{ github.run_id }}
+          path: server/benchmarks/resilience/consistency/reports/websocket-resync.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Infrastructure diagnostics
+        if: failure()
+        run: |
+          docker logs criczone-resync-postgres || true
+          docker logs criczone-resync-valkey || true
+
+      - name: Cleanup isolated services
+        if: always()
+        run: |
+          docker rm -f criczone-resync-postgres || true
+          docker rm -f criczone-resync-valkey || true
