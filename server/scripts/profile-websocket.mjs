@@ -81,18 +81,45 @@ async function getMetrics() {
   return response.text();
 }
 
+
 function getMetric(text, name) {
-  const escaped = name.replace(
-    /[.*+?^${}()|[\]\\]/g,
-    '\\$&'
-  );
+  const lines = text.split('\n');
+  let total = 0;
+  let found = false;
 
-  const match = text.match(
-    new RegExp(`^${escaped}\\s+([\\d.eE+-]+)$`, 'm')
-  );
+  for (const line of lines) {
+    const trimmed = line.trim();
 
-  return match ? Number(match[1]) : 0;
+    if (
+      !trimmed.startsWith(`${name} `) &&
+      !trimmed.startsWith(`${name}{`)
+    ) {
+      continue;
+    }
+
+    const match = trimmed.match(
+      /^(?:[a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{.*\})?\s+([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)$/
+    );
+
+    if (!match) {
+      throw new Error(
+        `Unable to parse Prometheus metric: ${trimmed}`
+      );
+    }
+
+    const value = Number(match[1]);
+
+    if (!Number.isFinite(value)) {
+      throw new Error(`Invalid metric value: ${trimmed}`);
+    }
+
+    total += value;
+    found = true;
+  }
+
+  return found ? total : null;
 }
+
 
 function connectClient() {
   const start = performance.now();
@@ -259,9 +286,20 @@ async function runCohort(count) {
 
     const after = await getMetrics();
 
+    const afterDisconnects = getMetric(
+      after,
+      'websocket_disconnections_total'
+    );
+
+    if (afterDisconnects === null) {
+      throw new Error(
+        'WebSocket disconnection metric was not exported'
+      );
+    }
+
+
     const disconnectDelta =
-      getMetric(after, 'websocket_disconnections_total') -
-      beforeDisconnects;
+  afterDisconnects - (beforeDisconnects ?? 0);
 
     if (disconnectDelta !== count) {
       throw new Error(
