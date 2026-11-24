@@ -2,105 +2,123 @@
 
 **Project:** CricZone  
 **Branch:** `feat/rest-api-baseline-25-8-1`  
-**Environment:** Isolated GitHub Actions runner (`ubuntu-24.04`), single backend, Socket.IO over WebSocket, Redis adapter  
-**Evidence date:** 2026-11-24 12:46:09.656 UTC (connection lifecycle test)  
-**Report status:** **PARTIAL — live-event delivery and reconnection benchmark awaiting CI evidence**
+**Environment:** Isolated GitHub Actions runner (`ubuntu-24.04`); one CricZone backend, local Kafka, PostgreSQL and Redis; Socket.IO over the WebSocket transport  
+**Connection evidence:** `2026-11-24T12:46:09.656Z`  
+**End-to-end delivery evidence:** `2026-11-24T14:23:24.149Z`  
+**Report status:** **COMPLETE — all planned Phase 25.8.6 CI checks passed within the tested scope**
 
-## 1. Purpose and scope
+## 1. Objective and system under test
 
-Measure Socket.IO connection establishment, room subscription and disconnection under 10, 25 and 50 sequential client cohorts. Follow up with an end-to-end `BALL_RECORDED` delivery test traversing Kafka, PostgreSQL, `LiveUpdateService`, and Socket.IO, including explicit disconnect/reconnect/rejoin scenarios.
+Verify WebSocket connection establishment, room membership, disconnection, real cricket-event fan-out and explicit reconnection under sequential cohorts of 10, 25 and 50 clients. The delivery test follows the real application path:
 
-This is an isolated CI test, **not** a production capacity or availability certification.
+`Kafka criczone.live.ball-events` → `KafkaEventConsumer` → `LiveBallEventHandler` → `LiveUpdateService.processBallRecorded` → PostgreSQL delivery persistence / Redis cache updates → `SocketIOGateway.emitToRoom("match:1", "BALL_RECORDED", ...)` → subscribed Socket.IO clients.
 
-## 2. System under test
+The backend is assembled by `server/src/bootstrap/ApplicationBootstrap.js`; Socket.IO and its Redis adapter are created in `server/src/containers/websocket.container.js`; room lifecycle events `join-match` / `leave-match` are handled in `server/src/websocket/SocketConnectionHandler.js`. The benchmark runs only against the isolated localhost CI environment and the `criczone_test` database.
 
-- Server: `server/src/bootstrap/ApplicationBootstrap.js` creates the HTTP server and Socket.IO infrastructure.
-- Socket.IO construction and Redis adapter: `server/src/containers/websocket.container.js`.
-- Room lifecycle: `server/src/websocket/SocketConnectionHandler.js` handles `join-match`, `leave-match`, and `disconnect`.
-- Room name: `match:<id>` from `server/src/websocket/WebSocketRooms.js`.
-- Live event path: Kafka `criczone.live.ball-events` → `KafkaEventConsumer` → `LiveBallEventHandler` → `LiveUpdateService.processBallRecorded` → `SocketIOGateway.emitToRoom` → `BALL_RECORDED`.
-- Metrics: `/metrics` with Socket.IO connection, join, leave and disconnect counters.
+## 2. Connection and room lifecycle results (Phase 25.8.6)
 
-## 3. Completed connection and lifecycle benchmark
-
-Source: user-provided `25.8.6` JSON at `2026-11-24T12:46:09.656Z`.
+Source: `server/benchmark-evidence/websocket-profile.json`, recorded `2026-11-24T12:46:09.656Z`.
 
 | Metric | 10 clients | 25 clients | 50 clients |
 |---|---:|---:|---:|
 | Connection attempts | 10 | 25 | 50 |
 | Successful connections | 10 | 25 | 50 |
 | Failed connections | 0 | 0 | 0 |
-| Average connection latency (ms) | 24.8545 | 15.3193 | 21.3714 |
-| Median connection latency (ms) | 23.8759 | 15.1508 | 19.8183 |
-| p95 connection latency (ms) | 33.0523 | 15.7457 | 23.8441 |
-| p99 connection latency (ms) | 33.0523 | 19.9177 | 29.3243 |
-| Maximum connection latency (ms) | 33.0523 | 19.9177 | 29.3243 |
-| Verified room joins | 10 | 25 | 50 |
-| Verified room leaves | 10 | 25 | 50 |
-| Verified disconnects | 10 | 25 | 50 |
+| Average connection latency (ms) | 24.855 | 15.319 | 21.371 |
+| Median connection latency (ms) | 23.876 | 15.151 | 19.818 |
+| p95 connection latency (ms) | 33.052 | 15.746 | 23.844 |
+| p99 connection latency (ms) | 33.052 | 19.918 | 29.324 |
+| Match-room joins verified | 10 | 25 | 50 |
+| Match-room leaves verified | 10 | 25 | 50 |
+| Disconnections verified | 10 | 25 | 50 |
 | Active-client gauge sample | 10 | 25 | 50 |
 
-**Observed totals:** 85/85 successful connections, 85 joins, 85 leaves and 85 disconnects; no reported errors. The cohorts were sequential; the sum of 85 does not mean 85 simultaneous clients. Maximum tested concurrency was 50.
+**Result:** 85/85 connection attempts succeeded; all 85 room joins, 85 room leaves and 85 disconnections were verified through backend metrics. The maximum simultaneous client count was **50**, not 85; cohorts ran sequentially. The earlier zero-disconnection result was a benchmark parser problem: `websocket_disconnections_total` has a `reason` label and needed labeled-series aggregation. The corrected benchmark passed.
 
-### Interpretation
+## 3. Live cricket-event delivery and reconnection (Phase 25.8.6.5)
 
-The measured single backend accepted up to 50 simultaneous WebSocket connections in these brief trials, with a 50-client connection p95 of 23.8441 ms. The apparently faster 25-client cohort is not evidence of improved scaling; each cohort represents a short sample on a variable CI runner. The initial disconnect verification error was caused by the benchmark's failure to aggregate labeled Prometheus counter samples; the corrected run verified the full disconnect counts.
+Source: `server/benchmark-evidence/websocket-delivery-profile.json`, recorded `2026-11-24T14:23:24.149Z` with `status: "passed"`.
 
-## 4. Phase 25.8.6.5 — Live-event delivery and reconnection
+Each cohort connected and subscribed to `match:1`, received an initial real `BALL_RECORDED` event, explicitly disconnected/reconnected approximately 20% of its clients, resubscribed those clients, and received a second unique event. Each event went through Kafka and the application pipeline and was checked for a corresponding unique row in PostgreSQL `deliveries`.
 
-**Status: NOT YET MEASURED.** The completed connection-lifecycle JSON explicitly states that it did not test `BALL_RECORDED` delivery or reconnect recovery. Do not fill in outcome values until a successful dedicated workflow run is available.
+| Metric | 10 clients | 25 clients | 50 clients | Total |
+|---|---:|---:|---:|---:|
+| Distinct Kafka live events | 2 | 2 | 2 | **6** |
+| Initial broadcast notifications | 10 | 25 | 50 | 85 |
+| Post-reconnect notifications | 10 | 25 | 50 | 85 |
+| Client notifications verified | 20 | 50 | 100 | **170** |
+| Missing notifications | 0 | 0 | 0 | **0** |
+| Duplicate notifications | 0 | 0 | 0 | **0** |
+| Explicitly reconnected clients | 2 | 5 | 10 | **17** |
+| Deliveries persisted once per event ID | 2 | 2 | 2 | **6** |
 
-### Test implementation
+### 3.1 Publish-to-client latency
 
-`server/scripts/profile-websocket-delivery.mjs` is intended to run after the connection lifecycle step. It:
+Latencies are recorded from Kafka producer publish initiation to Socket.IO receipt at each benchmark client. These measurements **include Kafka, application processing, PostgreSQL, Redis and Socket.IO**, and therefore are not pure WebSocket transport latency.
 
-1. Enforces isolated CI environment, localhost broker/backend and the seeded `criczone_test` database.
-2. Verifies clean seeded innings, batting/bowling rows and no previously inserted deliveries.
-3. Establishes 10, 25 and 50 actual Socket.IO clients, joining `match:1` and verifying the server join counter.
-4. Publishes one valid, uniquely identified `BALL_RECORDED` message for each cohort to the actual Kafka live topic.
-5. Waits for all subscribed clients to receive the matching ball number, rejects duplicate notifications, and checks exactly one matching PostgreSQL `deliveries` row.
-6. Explicitly disconnects about 20% of the clients, reconnects them, verifies their resubscriptions, and publishes a second unique event to all clients.
-7. Records per-client publish-to-receipt latency and writes `server/benchmark-evidence/websocket-delivery-profile.json` even if the benchmark detects a failure.
+| Cohort and broadcast | Average (ms) | p50 (ms) | p95 (ms) | p99 (ms) | Max (ms) |
+|---|---:|---:|---:|---:|---:|
+| 10 initial | 44.974 | 44.960 | 45.295 | 45.295 | 45.295 |
+| 10 after reconnection | 12.418 | 12.414 | 12.662 | 12.662 | 12.662 |
+| 25 initial | 14.290 | 14.246 | 14.800 | 14.850 | 14.850 |
+| 25 after reconnection | 12.817 | 12.826 | 13.128 | 13.151 | 13.151 |
+| 50 initial | 16.400 | 16.291 | 17.302 | 17.368 | 17.368 |
+| 50 after reconnection | 16.076 | 16.052 | 17.359 | 17.414 | 17.414 |
 
-### Acceptance criteria
+The highest measured publish-to-client latency across all six events was **45.295 ms** (first 10-client broadcast). The maximum at 50 clients was **17.414 ms**. These brief trials do not establish steady-state latency percentiles or a latency-versus-concurrency trend.
 
-- Every subscribed client in every cohort receives the expected event exactly once.
-- Six distinct events are each persisted once in the CI database.
-- Reconnected clients receive the second event after rejoining the room.
-- All event checks complete within the test deadline; no missing/duplicate notifications.
-- JSON report has `status: "passed"` with cohort-level latency and counts.
+### 3.2 Explicit reconnection
 
-### Evidence to fill after CI run
+| Cohort | Reconnected clients | Reconnect and resubscribe duration (ms) | Subsequent event delivery |
+|---|---:|---:|---|
+| 10 clients | 2 | 15.796 | 10/10 clients |
+| 25 clients | 5 | 18.109 | 25/25 clients |
+| 50 clients | 10 | 23.893 | 50/50 clients |
 
-| Evidence | Result |
-|---|---|
-| Delivery/reconnect workflow run ID | Pending |
-| Event count | Pending (planned: 6) |
-| Total expected client deliveries | Pending (planned: 170) |
-| Missing notifications | Pending |
-| Duplicate notifications | Pending |
-| Delivery p50/p95/p99 by cohort | Pending |
-| Reconnected client count and success | Pending |
-| DB persistence integrity | Pending |
+**Result:** all **17** explicitly reconnected clients received the next event after resubscribing, alongside their continuously connected peers. The duration metric covers the benchmark's client replacement and resubscription sequence; it is **not** an automatic reconnect/backoff recovery time and does not measure Redis-adapter failover.
 
-### Restrictions
+### 3.3 Event persistence and integrity
 
-The test uses sequential, short bursts against one backend and one Redis/Kafka instance. It is not a steady-state soak test, scale-out test, Redis-adapter failover test or automatic Socket.IO retry/backoff test. Reported message latency is the **end-to-end publish-to-client** latency, including asynchronous Kafka, PostgreSQL and Redis work, not isolated Socket.IO network latency.
+The test produced six distinct `BALL_RECORDED` messages with unique event UUIDs. For each published event, the test checked exactly one PostgreSQL `deliveries` row by `event_id`, while clients recorded zero missing and zero duplicate matching notifications. This is **observed integrity for the six tested events**, not a general exactly-once delivery guarantee under arbitrary failures or network partitions.
 
-## 5. Conclusions and optimization decision
+## 4. Acceptance assessment
 
-**Supported now:** Connection and room lifecycle passed across three isolated client cohorts, reaching 50 simultaneous clients without connection errors. There is no observed connection-lifecycle bottleneck in this limited test.
+| Test criterion | Evidence | Outcome |
+|---|---|---|
+| 10/25/50 concurrent connection cohorts | 85/85 accepted | PASS |
+| Room join / leave / disconnect lifecycle | 85 of each, metric verified | PASS |
+| Each real live-ball event reaches all subscribers | 170/170 notifications | PASS |
+| No duplicate or missing client notifications | 0 / 0 reported | PASS |
+| One database delivery per event ID | 6/6 checked | PASS |
+| Explicit reconnect / resubscribe and subsequent delivery | 17 clients reconnected; subsequent events received | PASS |
+| Record per-client end-to-end delivery latency | Six latency distributions included | PASS |
 
-**Not yet supported:** Claims about real cricket event fan-out, reconnect recovery, production-scale concurrent connections, failover or sustained throughput.
+**Phase 25.8.6 conclusion:** Planned isolated CI functional and short-burst scalability verification **passed**. No connection failure, delivery loss, duplicate, or failed explicit reconnection was observed in the tested workloads.
 
-**Decision:** Do not modify production Socket.IO configuration based on these brief connection tests. Complete and review the dedicated event-delivery JSON, then update this report with measured results. Keep this phase **PARTIAL** until that evidence is available.
+## 5. Limitations and interpretation
 
-## 6. Reproduction and evidence paths
+1. **Single backend instance:** no multi-instance socket fan-out or Redis adapter cross-instance coordination was exercised.
+2. **Short, sequential cohorts:** 10, 25 and 50 clients were tested separately; 50 was the maximum simultaneous connection count. This is not a maximum-capacity or soak benchmark.
+3. **Local dependencies on GitHub Actions:** Kafka, Redis, PostgreSQL and the backend shared an isolated CI environment; cloud deployment network and resource characteristics were not measured.
+4. **Explicit reconnect only:** benchmark-controlled disconnect/reconnect/rejoin is not evidence for automatic reconnect, retry/backoff behavior, or recovery from unplanned drops.
+5. **No fault injection:** Kafka failures, Redis adapter outages, broker recovery, backend restarts and network partitions were not tested.
+6. **Small number of distinct live events:** six published balls exercised the full path, but do not establish sustained event rates, high-volume throughput, or generalized exactly-once semantics.
+7. **Client-side receipt measurements:** no end-user browser rendering latency or geographically distributed client performance was captured.
 
-- `server/scripts/profile-websocket.mjs`
-- `server/benchmark-evidence/websocket-profile.json`
-- `server/scripts/profile-websocket-delivery.mjs`
-- `server/benchmark-evidence/websocket-delivery-profile.json` (pending CI run)
-- `.github/workflows/rest-api-baseline.yml`
+## 6. Optimization and next action
 
-All measurements and conclusions apply only to the specified isolated GitHub Actions benchmark conditions.
+**Decision:** No Socket.IO performance optimization is currently justified by these observations. Preserve existing behavior rather than changing rooms, connection options or Redis adapter settings without evidence of a bottleneck.
+
+Mark Phase **25.8.6 complete for its planned isolated CI scope**. Proceed to **Phase 25.8.7: Performance Optimization and Bottleneck Remediation**, starting with evidence-based prioritization of findings from REST, PostgreSQL, Redis, Kafka and Socket.IO. Treat higher concurrency, sustained-load, multi-instance and failure-injection scenarios as additional validation work if production scale requires it.
+
+## 7. Reproduction and evidence
+
+- CI workflow: `.github/workflows/rest-api-baseline.yml` (capacity profile)
+- Connection benchmark: `server/scripts/profile-websocket.mjs`
+- Connection evidence: `server/benchmark-evidence/websocket-profile.json`
+- Live event benchmark: `server/scripts/profile-websocket-delivery.mjs`
+- Live event evidence: `server/benchmark-evidence/websocket-delivery-profile.json`
+- Live event Kafka topic: `criczone.live.ball-events`
+- Verified match room: `match:1`
+
+*Results are supported by the two submitted CI JSON reports. No production-scale capacity, automatic recovery, or cross-instance behavior is claimed.*
