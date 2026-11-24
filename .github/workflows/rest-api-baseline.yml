@@ -5,11 +5,12 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: 'Baseline (rate-limit friendly) or stress (may trigger 429)'
+        description: "Baseline (rate-limit friendly) or stress (may trigger 429)"
         type: choice
         options:
           - baseline
           - stress
+          - capacity
         required: true
         default: baseline
 
@@ -72,27 +73,37 @@ jobs:
       NODE_ENV: test
       PORT: '3000'
 
+      # PostgreSQL
       DATABASE_URL: postgresql://criczone:criczone_ci_password@localhost:5432/criczone_test
       TEST_DATABASE_URL: postgresql://criczone:criczone_ci_password@localhost:5432/criczone_test
 
+      # Redis
       REDIS_URL: redis://localhost:6379
       TEST_REDIS_URL: redis://localhost:6379
 
+      # Kafka
       KAFKA_CLIENT_ID: criczone-rest-baseline
       KAFKA_BROKERS: localhost:9092
       TEST_KAFKA_BROKERS: localhost:9092
       KAFKA_LIVE_CONSUMER_GROUP: criczone-rest-baseline-group
       TEST_KAFKA_TOPIC: criczone.test.live-events
 
+      # CORS
       CORS_ALLOWED_ORIGINS: http://localhost:5173
       TEST_CORS_ALLOWED_ORIGINS: http://localhost:5173
 
+      # Benchmark configuration
       BASE_URL: http://127.0.0.1:3000
       MATCH_ID: '1'
       ISOLATED_TEST_ENV: 'true'
       PROFILE: ${{ inputs.profile }}
+      CRICZONE_CI_CAPACITY_TEST: ${{ inputs.profile == 'capacity' && 'true' || 'false' }}
 
     steps:
+      # ------------------------------------------------------------
+      # 1. Checkout and backend dependencies
+      # ------------------------------------------------------------
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -107,17 +118,32 @@ jobs:
         working-directory: server
         run: npm ci
 
+      # ------------------------------------------------------------
+      # 2. Install k6
+      # ------------------------------------------------------------
+
       - name: Install k6
         run: |
-          curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
+          set -euo pipefail
 
-          echo 'deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main' | sudo tee /etc/apt/sources.list.d/k6.list
+          curl -fsSL https://dl.k6.io/key.gpg \
+            | sudo gpg --dearmor \
+                -o /usr/share/keyrings/k6-archive-keyring.gpg
+
+          echo \
+            'deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main' \
+            | sudo tee /etc/apt/sources.list.d/k6.list
 
           sudo apt-get update
           sudo apt-get install -y k6
+
           k6 version
 
-      - name: Initialize PostgreSQL schema and seed data
+      # ------------------------------------------------------------
+      # 3. Initialize PostgreSQL with required migration
+      # ------------------------------------------------------------
+
+      - name: Initialize PostgreSQL schema, migrations and seed data
         working-directory: server
         env:
           PGHOST: localhost
@@ -126,21 +152,56 @@ jobs:
           PGPASSWORD: criczone_ci_password
           PGDATABASE: criczone_test
         run: |
-          psql -v ON_ERROR_STOP=1 -c 'DROP SCHEMA IF EXISTS public CASCADE;'
-          psql -v ON_ERROR_STOP=1 -f database/schema/schema.sql
-          psql -v ON_ERROR_STOP=1 -f database/seeds/seed.sql
+          set -euo pipefail
 
-          psql -Atqc 'SELECT match_id FROM scorecards WHERE match_id = 1' | grep -qx '1'
+          echo "Resetting isolated CI database schema"
+
+          psql -v ON_ERROR_STOP=1 \
+            -c 'DROP SCHEMA IF EXISTS public CASCADE;'
+
+          psql -v ON_ERROR_STOP=1 \
+            -f database/schema/schema.sql
+
+          echo "Applying cache invalidation outbox migration"
+
+          psql -v ON_ERROR_STOP=1 \
+            -f database/migrations/001_create_cache_invalidation_outbox.sql
+
+          echo "Seeding cricket test data"
+
+          psql -v ON_ERROR_STOP=1 \
+            -f database/seeds/seed.sql
+
+          echo "Verifying cache invalidation outbox table"
+
+          psql -Atqc \
+            "SELECT to_regclass('public.cache_invalidation_outbox') IS NOT NULL" \
+            | grep -qx 't'
+
+          echo "Verifying seeded match and scorecard"
+
+          psql -Atqc \
+            'SELECT match_id FROM scorecards WHERE match_id = 1' \
+            | grep -qx '1'
+
+          echo "Database initialization verified"
+
+      # ------------------------------------------------------------
+      # 4. Initialize Kafka
+      # ------------------------------------------------------------
 
       - name: Initialize Kafka topics
         working-directory: server
         run: |
+          set -euo pipefail
+
           node --input-type=module <<'EOFJS'
           import { Kafka } from 'kafkajs';
 
           const kafka = new Kafka({
             clientId: 'criczone-rest-benchmark-admin',
             brokers: ['localhost:9092'],
+            connectionTimeout: 10000,
             retry: {
               retries: 10,
               initialRetryTime: 1000
@@ -167,45 +228,260 @@ jobs:
                 }
               ]
             });
+
+            console.log('Kafka topics initialized');
           } finally {
             await admin.disconnect();
           }
           EOFJS
 
+      # ------------------------------------------------------------
+      # 5. Start isolated Express backend
+      # ------------------------------------------------------------
+
       - name: Start isolated Express server
         working-directory: server
         run: |
-          nohup npm start > /tmp/criczone-rest-baseline-server.log 2>&1 &
+          set -euo pipefail
+
+          nohup npm start \
+            > /tmp/criczone-rest-baseline-server.log 2>&1 &
+
           echo $! > /tmp/criczone-rest-baseline-server.pid
+
+          echo "CricZone backend process started"
 
       - name: Verify backend readiness
         run: |
+          set -euo pipefail
+
           for i in $(seq 1 60); do
-            if curl --fail --silent --output /dev/null http://127.0.0.1:3000/health; then
+
+            if curl \
+              --fail \
+              --silent \
+              --output /dev/null \
+              http://127.0.0.1:3000/health; then
+
+              echo "CricZone backend is ready"
               exit 0
             fi
+
+            if ! kill -0 \
+              "$(cat /tmp/criczone-rest-baseline-server.pid)" \
+              2>/dev/null; then
+
+              echo "Backend process exited unexpectedly"
+              tail -n 150 /tmp/criczone-rest-baseline-server.log
+              exit 1
+            fi
+
             sleep 2
           done
 
-          echo 'Express server did not become ready'
+          echo "Backend readiness timed out"
+          tail -n 150 /tmp/criczone-rest-baseline-server.log
           exit 1
+
+      # ------------------------------------------------------------
+      # 6. Validate API endpoints before benchmarking
+      # ------------------------------------------------------------
 
       - name: Validate REST endpoints before load
         run: |
           set -euo pipefail
 
-          for path in /api/v1/matches /api/v1/matches/1 /api/v1/matches/1/scorecard; do
+          for path in \
+            /api/v1/matches \
+            /api/v1/matches/1 \
+            /api/v1/matches/1/scorecard
+          do
+
             echo "Checking ${path}"
 
-            curl --fail --show-error --silent "${BASE_URL}${path}" \
-              | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{const j=JSON.parse(s);if(j.success!==true||j.data==null) process.exit(1);console.log("valid API payload")})'
+            response_file="$(mktemp)"
+
+            status="$(
+              curl \
+                --silent \
+                --show-error \
+                --output "${response_file}" \
+                --write-out '%{http_code}' \
+                "${BASE_URL}${path}"
+            )"
+
+            echo "HTTP status: ${status}"
+
+            if [ "${status}" != "200" ]; then
+              echo "::error::REST preflight failed for ${path}"
+              echo "Response body:"
+              head -c 3000 "${response_file}"
+              echo ""
+
+              rm -f "${response_file}"
+              exit 1
+            fi
+
+            node -e '
+              const fs = require("fs");
+              const path = process.argv[1];
+
+              let payload;
+
+              try {
+                payload = JSON.parse(
+                  fs.readFileSync(path, "utf8")
+                );
+              } catch (error) {
+                console.error(
+                  "Invalid JSON response:",
+                  error.message
+                );
+                process.exit(1);
+              }
+
+              if (
+                payload.success !== true ||
+                payload.data === undefined ||
+                payload.data === null
+              ) {
+                console.error(
+                  "Unexpected CricZone API response structure"
+                );
+                process.exit(1);
+              }
+
+              console.log("Valid cricket API payload");
+            ' "${response_file}"
+
+            rm -f "${response_file}"
+
           done
 
+          echo "All cricket REST endpoints passed preflight"
+    
+      - name: Profile Redis cache 25.8.4
+        if: ${{ inputs.profile == 'capacity' }}
+        working-directory: server
+        run: |
+          set -euo pipefail
+
+          node scripts/profile-redis-cache.mjs
+
+      - name: Profile Kafka throughput and consumer lag 25.8.5
+        if: ${{ inputs.profile == 'capacity' }}
+        working-directory: server
+        run: |
+          set -euo pipefail
+
+          node scripts/profile-kafka.mjs
+      
+
+      - name: Profile WebSocket scalability 25.8.6
+        if: ${{ inputs.profile == 'capacity' }}
+        working-directory: server
+        run: |
+          set -euo pipefail
+
+          node scripts/profile-websocket.mjs
+
+      
+      - name: Verify live event delivery and reconnections 
+        if: ${{ inputs.profile == 'capacity' }}
+        working-directory: server
+        run: |
+          set -euo pipefail
+          node scripts/profile-websocket-delivery.mjs
+
+     
+      - name: Profile PostgreSQL queries 25.8.3
+        if: ${{ inputs.profile == 'capacity' }}
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGUSER: criczone
+          PGPASSWORD: criczone_ci_password
+          PGDATABASE: criczone_test
+        run: |
+          set -euo pipefail
+
+          mkdir -p benchmark-evidence
+
+          psql -X -v ON_ERROR_STOP=1 \
+            -f server/database/scripts/profile-rest-queries.sql \
+            > benchmark-evidence/postgresql-query-profile.txt
+
+          echo "PostgreSQL profiling completed"
+
+
+
+      # ------------------------------------------------------------
+      # 7. Existing health smoke benchmark
+      # ------------------------------------------------------------
+
       - name: Run existing health smoke benchmark
-        run: k6 run server/load-tests/rest-api.js
+        run: |
+          set -euo pipefail
+
+          k6 run server/load-tests/rest-api.js
+
+      # ------------------------------------------------------------
+      # 8. Representative cricket REST benchmark
+      # ------------------------------------------------------------
 
       - name: Run cricket REST baseline
-        run: k6 run server/load-tests/rest-api-baseline.js
+        run: |
+          set -euo pipefail
+
+          k6 run server/load-tests/rest-api-baseline.js
+
+      
+      - name: Run REST bottleneck and PostgreSQL connection analysis
+        if: ${{ inputs.profile == 'capacity' }}
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGUSER: criczone
+          PGPASSWORD: criczone_ci_password
+          PGDATABASE: criczone_test
+        run: |
+          set -euo pipefail
+
+          mkdir -p benchmark-evidence
+
+          echo "timestamp_epoch,total,active,idle,waiting" \
+            > benchmark-evidence/postgresql-connections.csv
+
+          k6 run server/load-tests/rest-api-bottlenecks.js &
+          benchmark_pid=$!
+
+          while kill -0 "$benchmark_pid" 2>/dev/null; do
+            psql -X -At -F ',' -c "
+              SELECT
+                EXTRACT(EPOCH FROM clock_timestamp()),
+                COUNT(*),
+                COUNT(*) FILTER (WHERE state = 'active'),
+                COUNT(*) FILTER (WHERE state = 'idle'),
+                COUNT(*) FILTER (
+                  WHERE wait_event_type IS NOT NULL
+                    AND state = 'active'
+                )
+              FROM pg_stat_activity
+              WHERE datname = current_database()
+                AND pid <> pg_backend_pid()
+                AND backend_type = 'client backend'
+                AND application_name IS DISTINCT FROM 'psql';
+            " >> benchmark-evidence/postgresql-connections.csv
+
+            sleep 1
+          done
+
+          wait "$benchmark_pid"
+
+
+      # ------------------------------------------------------------
+      # 9. Preserve benchmark evidence
+      # ------------------------------------------------------------
 
       - name: Preserve backend log
         if: always()
@@ -213,7 +489,9 @@ jobs:
           mkdir -p benchmark-evidence
 
           if [ -f /tmp/criczone-rest-baseline-server.log ]; then
-            cp /tmp/criczone-rest-baseline-server.log benchmark-evidence/server.log
+            cp \
+              /tmp/criczone-rest-baseline-server.log \
+              benchmark-evidence/server.log
           fi
 
       - name: Upload benchmark results
@@ -223,10 +501,21 @@ jobs:
           name: criczone-rest-baseline-${{ github.run_id }}
           path: |
             rest-api-baseline-results.json
+            rest-api-bottlenecks-results.json
             benchmark-evidence/server.log
+            benchmark-evidence/postgresql-query-profile.txt
+            benchmark-evidence/postgresql-connections.csv
+            server/benchmark-evidence/redis-cache-profile.json
+            server/benchmark-evidence/kafka-profile.json
+            server/benchmark-evidence/websocket-profile.json
+            server/benchmark-evidence/websocket-delivery-profile.json
           if-no-files-found: warn
           retention-days: 30
 
       - name: Show backend logs on failure
         if: failure()
-        run: tail -n 150 /tmp/criczone-rest-baseline-server.log || true
+        run: |
+          if [ -f /tmp/criczone-rest-baseline-server.log ]; then
+            echo "Last 150 lines of CricZone backend logs"
+            tail -n 150 /tmp/criczone-rest-baseline-server.log
+          fi
