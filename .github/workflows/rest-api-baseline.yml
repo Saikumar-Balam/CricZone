@@ -359,6 +359,27 @@ jobs:
           done
 
           echo "All cricket REST endpoints passed preflight"
+     
+      - name: Profile PostgreSQL queries 25.8.3
+        if: ${{ inputs.profile == 'capacity' }}
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGUSER: criczone
+          PGPASSWORD: criczone_ci_password
+          PGDATABASE: criczone_test
+        run: |
+          set -euo pipefail
+
+          mkdir -p benchmark-evidence
+
+          psql -X -v ON_ERROR_STOP=1 \
+            -f server/database/scripts/profile-rest-queries.sql \
+            > benchmark-evidence/postgresql-query-profile.txt
+
+          echo "PostgreSQL profiling completed"
+
+
 
       # ------------------------------------------------------------
       # 7. Existing health smoke benchmark
@@ -380,11 +401,49 @@ jobs:
 
           k6 run server/load-tests/rest-api-baseline.js
 
-      - name: Run REST API bottleneck analysis 25.8.2
+      
+      - name: Run REST bottleneck and PostgreSQL connection analysis
         if: ${{ inputs.profile == 'capacity' }}
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGUSER: criczone
+          PGPASSWORD: criczone_ci_password
+          PGDATABASE: criczone_test
         run: |
           set -euo pipefail
-          k6 run server/load-tests/rest-api-bottlenecks.js
+
+          mkdir -p benchmark-evidence
+
+          echo "timestamp_epoch,total,active,idle,waiting" \
+            > benchmark-evidence/postgresql-connections.csv
+
+          k6 run server/load-tests/rest-api-bottlenecks.js &
+          benchmark_pid=$!
+
+          while kill -0 "$benchmark_pid" 2>/dev/null; do
+            psql -X -At -F ',' -c "
+              SELECT
+                EXTRACT(EPOCH FROM clock_timestamp()),
+                COUNT(*),
+                COUNT(*) FILTER (WHERE state = 'active'),
+                COUNT(*) FILTER (WHERE state = 'idle'),
+                COUNT(*) FILTER (
+                  WHERE wait_event_type IS NOT NULL
+                    AND state = 'active'
+                )
+              FROM pg_stat_activity
+              WHERE datname = current_database()
+                AND pid <> pg_backend_pid()
+                AND backend_type = 'client backend'
+                AND application_name IS DISTINCT FROM 'psql';
+            " >> benchmark-evidence/postgresql-connections.csv
+
+            sleep 1
+          done
+
+          wait "$benchmark_pid"
+
 
       # ------------------------------------------------------------
       # 9. Preserve benchmark evidence
@@ -410,6 +469,8 @@ jobs:
             rest-api-baseline-results.json
             rest-api-bottlenecks-results.json
             benchmark-evidence/server.log
+            benchmark-evidence/postgresql-query-profile.txt
+            benchmark-evidence/postgresql-connections.csv
           if-no-files-found: warn
           retention-days: 30
 
