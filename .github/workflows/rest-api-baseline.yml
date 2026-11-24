@@ -375,6 +375,15 @@ jobs:
           set -euo pipefail
 
           node scripts/profile-kafka.mjs
+      
+
+      - name: Profile WebSocket scalability 25.8.6
+        if: ${{ inputs.profile == 'capacity' }}
+        working-directory: server
+        run: |
+          set -euo pipefail
+
+          node scripts/profile-websocket.mjs
      
       - name: Profile PostgreSQL queries 25.8.3
         if: ${{ inputs.profile == 'capacity' }}
@@ -489,6 +498,7 @@ jobs:
             benchmark-evidence/postgresql-connections.csv
             server/benchmark-evidence/redis-cache-profile.json
             server/benchmark-evidence/kafka-profile.json
+            server/benchmark-evidence/websocket-profile.json
           if-no-files-found: warn
           retention-days: 30
 
