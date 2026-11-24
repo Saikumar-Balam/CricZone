@@ -480,6 +480,7 @@ jobs:
             benchmark-evidence/server.log
             benchmark-evidence/postgresql-query-profile.txt
             benchmark-evidence/postgresql-connections.csv
+            server/benchmark-evidence/redis-cache-profile.json
           if-no-files-found: warn
           retention-days: 30
 
