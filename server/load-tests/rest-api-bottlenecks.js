@@ -59,13 +59,27 @@ for (const [name, vus, startTime] of definitions) {
   };
 }
 
+
+const thresholds = {
+  checks: ['rate>0.99'],
+  http_req_failed: ['rate<0.01']
+};
+
+for (const [name] of definitions) {
+  thresholds[`http_req_duration{scenario:${name}}`] = [
+    'p(95)<2000'
+  ];
+
+  thresholds[`http_reqs{scenario:${name}}`] = [
+    'count>0'
+  ];
+}
+
 export const options = {
   scenarios,
-  thresholds: {
-    checks: ['rate>0.99'],
-    http_req_failed: ['rate<0.01']
-  }
+  thresholds
 };
+
 
 export function runEndpoint() {
   const name = __ENV.ENDPOINT_NAME;
@@ -134,7 +148,10 @@ export function handleSummary(data) {
       vus,
       endpoint: name.replace(/_\d+$/, ''),
       requests: requests.count ?? null,
-      requests_per_second: requests.rate ?? null,
+      requests_per_second:
+  requests.count == null
+    ? null
+    : requests.count / 30,
       avg_ms: latency.avg ?? null,
       p90_ms: latency['p(90)'] ?? null,
       p95_ms: latency['p(95)'] ?? null,
