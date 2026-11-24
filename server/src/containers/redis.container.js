@@ -18,6 +18,9 @@ if (!redisUrl) {
 const redisClient = createClient({
   url: redisUrl,
 
+  // Keep an Aiven Valkey connection active below its 300-second idle timeout.
+  pingInterval: 60_000,
+
   // Reject commands when Redis is disconnected.
   disableOfflineQueue: true,
 
