@@ -380,6 +380,12 @@ jobs:
 
           k6 run server/load-tests/rest-api-baseline.js
 
+      - name: Run REST API bottleneck analysis 25.8.2
+        if: ${{ inputs.profile == 'capacity' }}
+        run: |
+          set -euo pipefail
+          k6 run server/load-tests/rest-api-bottlenecks.js
+
       # ------------------------------------------------------------
       # 9. Preserve benchmark evidence
       # ------------------------------------------------------------
@@ -402,6 +408,7 @@ jobs:
           name: criczone-rest-baseline-${{ github.run_id }}
           path: |
             rest-api-baseline-results.json
+            rest-api-bottlenecks-results.json
             benchmark-evidence/server.log
           if-no-files-found: warn
           retention-days: 30
