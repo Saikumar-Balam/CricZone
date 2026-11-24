@@ -384,6 +384,15 @@ jobs:
           set -euo pipefail
 
           node scripts/profile-websocket.mjs
+
+      
+      - name: Verify live event delivery and reconnections 
+        if: ${{ inputs.profile == 'capacity' }}
+        working-directory: server
+        run: |
+          set -euo pipefail
+          node scripts/profile-websocket-delivery.mjs
+
      
       - name: Profile PostgreSQL queries 25.8.3
         if: ${{ inputs.profile == 'capacity' }}
@@ -499,6 +508,7 @@ jobs:
             server/benchmark-evidence/redis-cache-profile.json
             server/benchmark-evidence/kafka-profile.json
             server/benchmark-evidence/websocket-profile.json
+            server/benchmark-evidence/websocket-delivery-profile.json
           if-no-files-found: warn
           retention-days: 30
 
