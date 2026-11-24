@@ -1,5 +1,7 @@
 import Redis from "ioredis";
 
+const KEEPALIVE_INTERVAL_MS = 60_000;
+
 export default class SocketIOAdapterClientFactory {
     constructor(redisUrl, logger, metrics) {
         this.redisUrl = redisUrl;
@@ -66,6 +68,40 @@ export default class SocketIOAdapterClientFactory {
     }
 
     #registerRuntimeListener(client, role) {
+        let timer = null;
+        let pingInFlight = false;
+
+        const stopKeepalive = () => {
+            if (timer !== null) {
+                clearInterval(timer);
+                timer = null;
+            }
+        };
+
+        const startKeepalive = () => {
+            stopKeepalive();
+            timer = setInterval(() => {
+                // Do not enqueue PINGs while disconnected or while one is pending.
+                if (client.status !== "ready" || pingInFlight) return;
+                pingInFlight = true;
+                Promise.resolve()
+                    .then(() => client.ping())
+                    .catch((error) => {
+                        this.metrics.incrementCounter(
+                            "websocket_adapter_keepalive_errors_total", 1, { role }
+                        );
+                        this.logger.warn("Socket.IO Redis keepalive failed", {
+                            role, errorMessage: error.message
+                        });
+                    })
+                    .finally(() => { pingInFlight = false; });
+            }, KEEPALIVE_INTERVAL_MS);
+            timer.unref?.();
+        };
+
+        // PING is permitted for Redis Pub/Sub subscribers; both channels need
+        // application-level traffic to avoid intermediary idle timeouts.
+        client.on("close", stopKeepalive);
         client.on("error", (error) => {
             this.metrics.incrementCounter(
                 "websocket_adapter_errors_total",
@@ -83,6 +119,7 @@ export default class SocketIOAdapterClientFactory {
         });
 
         client.on("reconnecting", (delay) => {
+            stopKeepalive();
             this.metrics.incrementCounter(
                 "websocket_adapter_reconnects_total",
                 1,
@@ -99,6 +136,7 @@ export default class SocketIOAdapterClientFactory {
         });
 
         client.on("ready", () => {
+            startKeepalive();
             this.logger.info(
                 "Socket.IO Redis adapter client ready",
                 { role }
@@ -106,6 +144,7 @@ export default class SocketIOAdapterClientFactory {
         });
 
         client.on("end", () => {
+            stopKeepalive();
             this.logger.warn(
                 "Socket.IO Redis adapter client connection ended",
                 { role }
